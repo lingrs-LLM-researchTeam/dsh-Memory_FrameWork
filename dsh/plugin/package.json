@@ -9,15 +9,19 @@
   "exports": {
     ".": {
       "types": "./lib/index.d.ts",
-      "import": "./lib/index.js"
+      "import": "./lib/index.js",
+      "default": "./lib/index.js"
     },
-    "./client": "./lib/client.js",
+    "./client": {
+      "default": "./lib/client.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
     "lib",
     "dashboard",
     "python",
+    "skills",
     "cordis.patch.yml",
     "README.md",
     "LICENSE"
@@ -32,6 +36,7 @@
     "dsh": "0.2.2-rc.1"
   },
   "dsh": {
+    "manifestVersion": 1,
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
@@ -49,7 +54,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.host.json --noEmit && tsc -p tsconfig.client.json --noEmit",
-    "build": "npm run build:code && tsdown && vite build",
+    "build": "npm run build:code && tsdown && vite build && node scripts/sync-root.mjs",
     "test": "npm run build && vitest run",
     "dev": "vite --host 127.0.0.1",
     "prepack": "npm run build",

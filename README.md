@@ -106,9 +106,18 @@ score = w_task * task_match
 
 ### 1. 安装 DSH 原生插件（自动随 DSH 启动）
 
-无需提前手动启动后端脚本。直接在终端将插件包安装到对应的 DSH Profile（若使用桌面端请将 `web` 替换为实际 Profile 名称，或在 DSH 桌面端插件管理界面直接添加）：
+无需提前手动启动后端脚本。支持以下两种安装方式：
+
+- **方式 A：在 DSH 桌面端通过 Git 仓库直接添加（推荐）**
+  在 DSH 左侧栏点击「插件」→「添加插件」，直接粘贴仓库地址并安装：
+  `https://github.com/lingrs-LLM-researchTeam/dsh-Memory_FrameWork`
+- **方式 B：命令行安装（Git 仓库或本地 `.tgz` 发行包）**
 
 ```powershell
+# 直接从 GitHub 仓库安装
+npx @deepseek-ai/dsh@0.2.2-rc.1 plugin --profile web add "https://github.com/lingrs-LLM-researchTeam/dsh-Memory_FrameWork"
+
+# 或从本地构建的发行包安装
 npx @deepseek-ai/dsh@0.2.2-rc.1 plugin --profile web add "file:./dsh-memory-framework-0.3.1.tgz"
 ```
 

@@ -58,9 +58,9 @@ astrbot_plugin_*_config.json
 .DS_Store
 Thumbs.db
 Desktop.ini
-/dsh/plugin/lib/
-/dsh/plugin/dashboard/
+# Keep lib/ and dsh/plugin/{lib,dashboard} tracked so Git repository installs in DSH work out of the box
 /dsh/plugin/.compiled/
+/dsh/plugin/python/
 /output/
 /.playwright-cli/
 /build/

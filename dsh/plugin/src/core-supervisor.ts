@@ -119,9 +119,29 @@ function findSystemPython(preferred?: string): {
   );
 }
 
+function resolveRepoRoot(pluginRoot: string): string {
+  if (existsSync(join(pluginRoot, "pyproject.toml"))) {
+    return pluginRoot;
+  }
+  return resolve(pluginRoot, "..", "..");
+}
+
+function resolveDashboardDir(pluginRoot: string, repoRoot: string): string {
+  for (const candidate of [
+    join(pluginRoot, "dashboard"),
+    join(pluginRoot, "dsh", "plugin", "dashboard"),
+    join(repoRoot, "dsh", "plugin", "dashboard"),
+  ]) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return join(pluginRoot, "dashboard");
+}
+
 function findBundledWheel(pluginRoot: string, repoRoot: string): string | null {
   for (const dir of [
     join(pluginRoot, "python"),
+    join(pluginRoot, "dsh", "plugin", "python"),
+    join(repoRoot, "dsh", "plugin", "python"),
     join(repoRoot, "dist", "dsh"),
     join(repoRoot, "dist"),
   ]) {
@@ -149,7 +169,7 @@ export function resolvePythonRuntime(
       ? join(root, "Scripts", "python.exe")
       : join(root, "bin", "python");
 
-  const repoRoot = resolve(pluginRoot, "..", "..");
+  const repoRoot = resolveRepoRoot(pluginRoot);
   // Fast path for source repository checkouts with an existing virtualenv
   if (existsSync(join(repoRoot, "pyproject.toml"))) {
     for (const candidateRoot of [
@@ -252,7 +272,8 @@ export async function ensureCoreDaemon(
     return () => {};
   }
 
-  const uiDir = join(pluginRoot, "dashboard");
+  const repoRoot = resolveRepoRoot(pluginRoot);
+  const uiDir = resolveDashboardDir(pluginRoot, repoRoot);
   const serveArgs = [
     "-m",
     "memory_framework",

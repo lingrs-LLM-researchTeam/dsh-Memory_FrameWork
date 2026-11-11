@@ -7731,15 +7731,53 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		}
 		//#endregion
 		//#region .compiled/client.js
+		const MAIN_PANEL_ID = "memory-framework";
+		const IdentityResultSchema = object({ coreSessionId: string().nullable().optional() });
+		function MemorySidebarIcon({ size = 16 }) {
+			return (0, react_jsx_runtime.jsxs)("svg", {
+				width: size,
+				height: size,
+				viewBox: "0 0 24 24",
+				fill: "none",
+				"aria-hidden": "true",
+				children: [
+					(0, react_jsx_runtime.jsx)("circle", {
+						cx: "12",
+						cy: "12",
+						r: "8.25",
+						stroke: "currentColor",
+						strokeWidth: "1.75"
+					}),
+					(0, react_jsx_runtime.jsx)("path", {
+						d: "M12 3.75a8.25 8.25 0 0 0 0 16.5 6.2 6.2 0 0 1 0-16.5Z",
+						fill: "currentColor",
+						fillOpacity: "0.22"
+					}),
+					(0, react_jsx_runtime.jsx)("circle", {
+						cx: "15.2",
+						cy: "9.2",
+						r: "1.5",
+						fill: "currentColor"
+					})
+				]
+			});
+		}
+		function MemoryGuideIcon() {
+			return (0, react_jsx_runtime.jsx)(MemorySidebarIcon, { size: 20 });
+		}
 		function Body({ sessionId, call, openHandoff }) {
-			const [identity, setIdentity] = (0, react.useState)("");
+			const [identity, setIdentity] = (0, react.useState)(null);
 			const [error, setError] = (0, react.useState)("");
 			(0, react.useEffect)(() => {
 				const abort = new AbortController();
-				call("plugin.identity", {}, sessionId, abort.signal).then((result) => {
-					if (!abort.signal.aborted) setIdentity(object({ coreSessionId: string() }).parse(result).coreSessionId);
-				}).catch((error) => {
-					if (!abort.signal.aborted) setError(String(error));
+				setError("");
+				call("plugin.identity", {}, sessionId || void 0, abort.signal).then((result) => {
+					if (!abort.signal.aborted) {
+						const parsed = IdentityResultSchema.parse(result);
+						setIdentity(parsed.coreSessionId ?? "");
+					}
+				}).catch((err) => {
+					if (!abort.signal.aborted) setError(String(err));
 				});
 				return () => abort.abort();
 			}, [sessionId, call]);
@@ -7747,11 +7785,45 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				role: "alert",
 				children: error
 			});
-			return identity ? (0, react_jsx_runtime.jsx)(Dashboard, {
+			return identity !== null ? (0, react_jsx_runtime.jsx)(Dashboard, {
 				call,
 				initialSessionId: identity,
 				onHandoff: openHandoff
 			}) : (0, react_jsx_runtime.jsx)("p", { children: "正在连接 Memory Framework…" });
+		}
+		function MainPage({ call, openHandoff }) {
+			return (0, react_jsx_runtime.jsx)("div", {
+				style: {
+					width: "100%",
+					height: "100%",
+					overflow: "auto"
+				},
+				children: (0, react_jsx_runtime.jsx)(Body, {
+					sessionId: void 0,
+					call,
+					openHandoff
+				})
+			});
+		}
+		function OpenMemoryAction({ subject, packageName, onOpen }) {
+			if (subject?.kind !== "bundle" && subject?.kind !== "row") return null;
+			if (subject.pkg?.name !== packageName) return null;
+			if (subject.kind === "row" && subject.row?.moduleName !== packageName) return null;
+			return (0, react_jsx_runtime.jsx)("button", {
+				type: "button",
+				onClick: onOpen,
+				style: {
+					padding: "5px 12px",
+					borderRadius: "6px",
+					border: "1px solid rgba(128, 128, 128, 0.28)",
+					background: "transparent",
+					color: "inherit",
+					fontSize: "12px",
+					fontWeight: 500,
+					cursor: "pointer"
+				},
+				children: "打开记忆面板"
+			});
 		}
 		const inject = [
 			"remote",
@@ -7765,8 +7837,35 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				package: PACKAGE,
 				descriptors
 			});
+			let injectedRemote;
+			let injectedLayout;
+			const ctxWithInject = ctx;
+			if (typeof ctxWithInject.inject === "function") {
+				ctxWithInject.inject(["remote.memoryFramework"], (remoteCtx) => {
+					injectedRemote = remoteCtx.remote.memoryFramework;
+					return () => {
+						injectedRemote = void 0;
+					};
+				});
+				ctxWithInject.inject(["layout"], (layoutCtx) => {
+					injectedLayout = layoutCtx.layout;
+					return () => {
+						injectedLayout = void 0;
+					};
+				});
+			}
+			const resolveRemote = () => {
+				if (injectedRemote) return injectedRemote;
+				const fromStore = ctxWithInject.get?.("remote.memoryFramework");
+				if (fromStore) return fromStore;
+				return ctx.remote.memoryFramework;
+			};
+			const resolveLayout = () => {
+				if (injectedLayout) return injectedLayout;
+				return ctxWithInject.get?.("layout");
+			};
 			const call = async (operation, payload = {}, sessionId, signal) => {
-				const result = await ctx.remote.memoryFramework.command({
+				const result = await resolveRemote().command({
 					operation,
 					payload,
 					...sessionId ? { session_id: sessionId } : {}
@@ -7780,6 +7879,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				if (list.phase !== "ready") throw new Error("会话列表尚未更新，请从 DSH 会话列表打开新会话");
 				const target = list.ids.find((value) => value === id);
 				if (!target) throw new Error("新会话尚未出现在宿主列表中");
+				resolveLayout()?.selectPanel(null);
 				ctx.uiWorkspace.openSession(target);
 			};
 			const definition = {
@@ -7789,20 +7889,51 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				guide: [{
 					id: "memory-framework",
 					order: 35,
-					title: () => "Memory Framework · 记忆与任务"
+					title: () => "Memory Framework · 记忆与任务",
+					description: () => "管理跨会话证据记忆、任务编排与上下文预算",
+					icon: MemoryGuideIcon
 				}]
 			};
-			ctx.effect(() => ctx.sidebarRightTabs.register(definition));
-			ctx.slots.inject("sidebar.right.pane.tab", () => ctx.slots.register({
+			const rawSlots = ctx.slots;
+			const disposers = [];
+			disposers.push(ctx.sidebarRightTabs.register(definition));
+			disposers.push(ctx.slots.inject("sidebar.right.pane.tab", () => ctx.slots.register({
 				name: "sidebar.right.pane.tab",
 				key: definition.id,
 				inject: () => ({
 					call,
 					openHandoff
 				})
-			}, Body));
+			}, Body)));
+			disposers.push(rawSlots.inject("main", () => rawSlots.register({
+				name: "main",
+				key: MAIN_PANEL_ID,
+				inject: () => ({
+					call,
+					openHandoff
+				})
+			}, MainPage)));
+			disposers.push(rawSlots.inject("sidebar.panellist", () => rawSlots.register({
+				name: "sidebar.panellist",
+				id: MAIN_PANEL_ID,
+				order: 15,
+				label: "记忆与任务"
+			}, MemorySidebarIcon)));
+			disposers.push(rawSlots.inject("plugins.detail.actions", () => rawSlots.register({
+				name: "plugins.detail.actions",
+				id: "memory-framework-open",
+				order: 20,
+				inject: () => ({
+					packageName: PACKAGE,
+					onOpen: () => resolveLayout()?.selectPanel(MAIN_PANEL_ID)
+				})
+			}, OpenMemoryAction)));
+			ctx.effect(() => () => {
+				for (const dispose of disposers.reverse()) dispose();
+			});
 		}
 		//#endregion
+		exports.MAIN_PANEL_ID = MAIN_PANEL_ID;
 		exports.apply = apply;
 		exports.inject = inject;
 		return module.exports;

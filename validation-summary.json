@@ -1,9 +1,9 @@
 {
-  "date": "2026-11-11",
-  "dsh_version": "0.3.1",
+  "date": "2026-11-12",
+  "dsh_version": "0.3.2",
   "astrbot_release": "1.3.0",
-  "core_tests": 40,
-  "dsh_typescript_tests": 8,
+  "core_tests": 42,
+  "dsh_typescript_tests": 13,
   "astrbot_memory_tests": 1226,
   "astrbot_upstream_asset_tests_skipped": 5,
   "astrbot_learning_webui_tests": 276,
@@ -23,7 +23,9 @@
   "shared_files_identical": 7,
   "astrbot_package_verified": true,
   "dsh_installed_wheel_tests": 40,
-  "current_validation": "docs/validation/dsh-0.3.1-regressions.json",
+  "current_validation": "docs/validation/dsh-0.3.2-regressions.json",
   "astrbot_validation_from_previous_iteration": true,
-  "core_validation_from_previous_iteration": true
+  "core_validation_from_previous_iteration": false,
+  "installed_dsh_plugin_status": "running",
+  "installed_dsh_plugin_hotfix_applied": true
 }

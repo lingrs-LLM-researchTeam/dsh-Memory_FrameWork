@@ -1,22 +1,22 @@
 {
-  "release": "0.3.1",
+  "release": "0.3.2",
   "scope": "DSH",
   "files": [
     {
       "path": "LICENSE",
-      "sha256": "91ac08a5a71546aaa0de67f98725616e432e692fff520d92e75ea06734b3f2e7"
+      "sha256": "b66b59d6372736bd102e9255b3d380ccbf8b0577dc16d57f3ac7de8af0976486"
     },
     {
       "path": "README.md",
-      "sha256": "b08aa6d5b4c9dfb4b916467826fd4cdd57bf806c7a09251a2bfbcf57e5ec7af8"
+      "sha256": "a385ac7ceb1379bbc42d573ebbf67287404ae71b90e0072fc46caf83f7195e07"
     },
     {
       "path": "dsh/README.md",
-      "sha256": "a5bc6c2e4d69a27bf225060891571e8ffd84919dd3e6b3a253893408b8bf9aa8"
+      "sha256": "c313dbfaf66e19daaaa12c6a6aca1e12a161045c9b6c076a30dc3fedd6221903"
     },
     {
       "path": "dsh/core/memory_framework/__init__.py",
-      "sha256": "f317c271a75cb02e26faa9436c871d1ebdc481479082a67fbbac699aea5c918f"
+      "sha256": "65c186a237223e8ecec69ec0c336704551785bb2a19aab7d723f573a2f45029c"
     },
     {
       "path": "dsh/core/memory_framework/__main__.py",
@@ -56,35 +56,43 @@
     },
     {
       "path": "dsh/plugin/LICENSE",
-      "sha256": "91ac08a5a71546aaa0de67f98725616e432e692fff520d92e75ea06734b3f2e7"
+      "sha256": "b66b59d6372736bd102e9255b3d380ccbf8b0577dc16d57f3ac7de8af0976486"
     },
     {
       "path": "dsh/plugin/README.md",
-      "sha256": "5a75881fb1edcf02ebfebd26f0f5f3753bb9d1822a6e71c386d5944ac44265ce"
+      "sha256": "880033d6ae003442fceba67eff45cffd9cada67da33f84c05f9c73350c26e15b"
     },
     {
       "path": "dsh/plugin/cordis.patch.yml",
-      "sha256": "f3f286dfb85c6b54bce89b3e853bca950f8633a1b2e13066e06619fc0cfda7d6"
+      "sha256": "941de597765820530484944d852f300a79c6de1d44ace6cce6be6c641ee38714"
     },
     {
       "path": "dsh/plugin/index.html",
-      "sha256": "5348d92272c7b37c6fa3189b8dfbb2be12ea5b70421e4ee59b8dc7bc36792b9f"
+      "sha256": "acc3b47705d71669c5b9a1257fc26a4294e1fd1cd63d454692cd96779e76cd2e"
     },
     {
       "path": "dsh/plugin/package-lock.json",
-      "sha256": "570b2ef5554341258818964d2362521ef790459556132823b7877a056ce90442"
+      "sha256": "927418d617c2e4808ef4fe5dfb87a5fc8555fbc8b6d03ca613db2e10fa116ac5"
     },
     {
       "path": "dsh/plugin/package.json",
-      "sha256": "6bd146cd248b93d5b584ad5020b616e27bd18e62208ebb1233f61b4bd4bd3b4a"
+      "sha256": "e7af341dfbe4dfaf6bdea97d1fe19f683ebfd906bd0fa46d73cea4a5015b01b1"
     },
     {
       "path": "dsh/plugin/scripts/smoke-core.mjs",
       "sha256": "049f63dcdaac9a33588be2cde5c1cb12c7cc373493d1da4f6045c93cec0db6d6"
     },
     {
+      "path": "dsh/plugin/scripts/sync-root.mjs",
+      "sha256": "742ee4abf7a48153ce153b77af3e0f8fb3847dd450334728f633cacd1ca318c8"
+    },
+    {
+      "path": "dsh/plugin/skills/dsh-memory-workflow/SKILL.md",
+      "sha256": "86540aa6787a87faf50480f7b6be6772585de1662d80a3265a1127b7718860e2"
+    },
+    {
       "path": "dsh/plugin/src/animated-switch.tsx",
-      "sha256": "7e7830ae331a6958bd6f2112a11a4c0d6eb89c8bfe62d90d34474e554f359326"
+      "sha256": "48cdd3766e97d8568dd39bf06c5f366988fb8297a8bc17bd8398406e7c273d35"
     },
     {
       "path": "dsh/plugin/src/client.tsx",
@@ -95,8 +103,12 @@
       "sha256": "22ca590cf234033e35afc9216b9393a695bc848aef2a5e69809fe058a8228818"
     },
     {
+      "path": "dsh/plugin/src/core-supervisor.ts",
+      "sha256": "acc5589d0eee1c0656fb9a9c70f19ae54ed905c627b22057ca04d5f56968cf8f"
+    },
+    {
       "path": "dsh/plugin/src/dashboard.tsx",
-      "sha256": "482d4b2e73b070873aad0e7ebd5f9dc0ea6b58d6b0d7608d34283fb4d2a4c591"
+      "sha256": "0f4c744279452beef8d6be174fd3087c44f74bcb226db502363912a410b8b500"
     },
     {
       "path": "dsh/plugin/src/gateway.ts",
@@ -104,39 +116,43 @@
     },
     {
       "path": "dsh/plugin/src/host-context.ts",
-      "sha256": "ef4190aa4d6d704fb28894faa723f415fa00a9f505d748bb70131e17e9e866ab"
+      "sha256": "388455d70d3a9a0a03afab86aadb551b06956b2dd1ebed878b371851aeba46bc"
     },
     {
       "path": "dsh/plugin/src/index.ts",
-      "sha256": "a6a2d319a232d02e519b72cff182aedb8d0d076dc75399b707c87a6102d0b6a7"
+      "sha256": "992003cf4e3fbeae9bf5ee2b6c03ef5ae913fbcbc1462117c9c0d201851e79c9"
     },
     {
       "path": "dsh/plugin/src/motion-mark.tsx",
-      "sha256": "f13a6aa775eb5e6fbe47fd7b8a739a07e50bbcefbd85adcacdcd46f99223830d"
+      "sha256": "e5a36525eb90f19de9e353b73da232f324bea96faf76c654f97944f17dacb644"
     },
     {
       "path": "dsh/plugin/src/motion-styles.ts",
-      "sha256": "2d2b276123d012d4198a778459fa9baf0a940cf9fd936e74d5e7fea6cacb81db"
+      "sha256": "6788266ff3848bd060d1951acdd7bdcbd4bccd916fa614140fce31dafac01c9a"
     },
     {
       "path": "dsh/plugin/src/policy-panel.tsx",
-      "sha256": "7d3894026af7cba00574c58c4a5e8ed0a7e183c1238d6356d9f1f6aebb51aad4"
+      "sha256": "563c19d7d27b60e286a0fea020f06bf385023560eb146a585f27cc4eaac43981"
     },
     {
       "path": "dsh/plugin/src/runtime.ts",
-      "sha256": "c1fd1c31db99755c4addb2153b57056c531178dd64101af801aa857a54ef69a7"
+      "sha256": "9c6582f930ea195bfe06aa8ff3bd15f2ccbf95add5cc00d5939fd5448c486952"
     },
     {
       "path": "dsh/plugin/src/standalone.tsx",
-      "sha256": "6cdc4cfa3872021f681de193231bc40d7d1d20c2abc2af380c0796d8a6ac8815"
+      "sha256": "0ec02051770857d1e5d125387ee24fb174b1fc3954af682e70f393deb509d12b"
     },
     {
       "path": "dsh/plugin/src/styles.ts",
-      "sha256": "d5f0fea26fa7adf57a8bd7ad6ad88714891c03a3d12633eafc728d67cce9086e"
+      "sha256": "5601300249d739f88326cd7378ea60a73de07ba006fbe4f9e437b43b9c934c58"
+    },
+    {
+      "path": "dsh/plugin/src/tool-names.ts",
+      "sha256": "705e8f845c9a6b49dc62b0d5382973fe95687e3863728b8d8b652683946fbf5f"
     },
     {
       "path": "dsh/plugin/src/tools.ts",
-      "sha256": "a59a294067ffa5e5e9d5fdc9c4366a8e1d374ffb324e712e414f9f3875a135e1"
+      "sha256": "224d918366b5865325da4ab8ca802dca656a4e08209ec9ca576c51dcd2abd8b9"
     },
     {
       "path": "dsh/plugin/src/transport.ts",
@@ -156,11 +172,15 @@
     },
     {
       "path": "dsh/plugin/tests/context.test.ts",
-      "sha256": "a13f123ecdb39a52378807a9a28bdcbf603080574553e9378b6c4adec65734eb"
+      "sha256": "c75e37544f9d4da007c4b1113c795b12362a9fba1aa916346731cb59d2ca5f8d"
     },
     {
       "path": "dsh/plugin/tests/gateway.test.ts",
       "sha256": "88eca3b0d226e627f65fd0c3335d415dfc083a7358e0e4406f7d0e7578bd77f9"
+    },
+    {
+      "path": "dsh/plugin/tests/tool-registration.test.js",
+      "sha256": "ed332836b0106fc4b3eaa8fd3cf0aadf497ebb78ca5611e43b06fc5275d35ce6"
     },
     {
       "path": "dsh/plugin/tests/weights.test.ts",
@@ -172,7 +192,7 @@
     },
     {
       "path": "dsh/plugin/tsconfig.host.json",
-      "sha256": "721b55ff74833ab9e30d250aede424a8aa9a9c232894de5aaa9082dadfa1407c"
+      "sha256": "e63843541fe6fde605d1eb5586cc6be78e3057680b21ab81401bbe5fe6257180"
     },
     {
       "path": "dsh/plugin/tsconfig.json",
@@ -204,11 +224,11 @@
     },
     {
       "path": "dsh/tests/test_engine.py",
-      "sha256": "5d7189fa8114901a57d2b94f13401c123d99b265dfd9fcae01c97b666e787987"
+      "sha256": "a2414ee13161fe982a399ad2a9fc780754bdcaedaae6cd46d13467b602ab74b3"
     },
     {
       "path": "pyproject.toml",
-      "sha256": "e7639e41880aa76822fe6a0899b2e7523e51903824c9c10cf8d054a9ff9136e0"
+      "sha256": "eca70163abe68789ec6d6c02d218d55740ee791678a8217850c06bbc26841d3d"
     },
     {
       "path": "shared/memory_framework_shared/__init__.py",
@@ -240,7 +260,7 @@
     },
     {
       "path": "tools/build_dsh_release.py",
-      "sha256": "257e30bffe2b1c050b670736a9699582ee9eb9f969b1af736a292aa9e8a7972f"
+      "sha256": "a0c81429e438c76bf2cf01cf38b2894c94128a214e52c60d4f6df92015bc3716"
     },
     {
       "path": "tools/check_distribution.py",

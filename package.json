@@ -1,6 +1,6 @@
 {
   "name": "dsh-memory-framework",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "icon": "./docs/images/dsh-logo.svg",
   "description": "Evidence-backed memory, cross-session tasks and an editable Memory Dashboard for DeepSeek Harness",
   "license": "MIT",

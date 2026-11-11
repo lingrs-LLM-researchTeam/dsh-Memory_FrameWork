@@ -10,7 +10,7 @@ DeepSeek Harness `0.2.2-rc.1` 原生长期记忆与跨会话任务插件，提�
 
 0.3.0 默认跟随当前步骤模型的上下文容量；首次运行建议在模型支持时设置 384k–500k Token。Dashboard 支持自动／手动记忆配额、可调占比、夜墨／纸白杂志风界面、24 条分页及隐藏暂停刷新。成套升级至 Python 核心 0.3.0，升级前备份数据；schema 1／2 自动迁移至 3。
 
-模型工具：`memory_search`、`memory_read`、`memory_remember`、`memory_task_state`、`memory_task_update`、`memory_checkpoint`。
+模型工具：`memory_framework_search`、`memory_framework_read`、`memory_framework_remember`、`memory_framework_task_state`、`memory_framework_task_update`、`memory_framework_checkpoint`。
 
 主安装说明随完整发行 ZIP 的 README 提供；源码仓库中位于 `dsh/README.md`。报告位于 `docs/DSH开发技术报告.md`。本包继承 MIT 许可。
 

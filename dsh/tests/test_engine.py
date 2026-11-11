@@ -341,9 +341,12 @@ def test_fork_receipt_cannot_cross_scope_or_unknown_provenance(engine):
     assert not engine.execute("context.check", {}, "b1", "host")["safe"]
 
 
-def test_memory_tool_echoes_and_inherited_sources_not_relearned(engine):
+@pytest.mark.parametrize(
+    "tool_name", ["memory_search", "memory_framework_search", "memory_framework_read"]
+)
+def test_memory_tool_echoes_and_inherited_sources_not_relearned(engine, tool_name):
     engine.execute(
-        "event.tool_call", {"call_id": "c1", "name": "memory_search"}, "a1", "host"
+        "event.tool_call", {"call_id": "c1", "name": tool_name}, "a1", "host"
     )
     response = engine.execute(
         "event.ingest",

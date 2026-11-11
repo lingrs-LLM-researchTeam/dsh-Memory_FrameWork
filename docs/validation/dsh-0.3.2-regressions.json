@@ -1,0 +1,27 @@
+{
+  "date": "2026-11-12",
+  "version": "0.3.2",
+  "root_cause": "global memory_read collision with installed dsh-linghun",
+  "red_reproduction": true,
+  "sdk_tests": 13,
+  "python_tests": 42,
+  "typecheck": true,
+  "both_install_orders": true,
+  "unload_reload_cycles": 3,
+  "trusted_dispatch_and_missing_agent": true,
+  "legacy_and_new_tool_echoes": true,
+  "paid_model_calls": 0,
+  "installed_app_verification": {
+    "status": "running",
+    "observed_component_summary": "共 1 个 · 1 运行中",
+    "displayed_version": "0.3.2",
+    "former_error_absent": true,
+    "reload": "plugin off/on in existing DSH window",
+    "full_app_restart": false,
+    "other_plugin_modified": false,
+    "memory_database_manually_modified": false,
+    "backup": "E:/Github_repo/.cleanup-backups/dsh-memory-tool-name-fix-20261112",
+    "files_updated": 4,
+    "upstream_published": false
+  }
+}

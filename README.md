@@ -2,7 +2,7 @@
 
 <img src="docs/images/dsh-logo.svg" width="96" height="96" alt="Memory Framework Logo" />
 
-# Memory Framework for DeepSeek Harness `0.3.1`
+# Memory Framework for DeepSeek Harness `0.3.2`
 
 **专供 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 使用的原生长期记忆、可追溯证据与跨窗口任务状态管理插件**
 
@@ -26,7 +26,7 @@
 ---
 
 > [!IMPORTANT]
-> **宿主平台专属声明**：本仓库当前版本（`v0.3.1`）为**专供 DeepSeek Harness (DSH) 使用的原生插件与独立 Python 记忆核心**，运行过程完全不依赖 AstrBot。
+> **宿主平台专属声明**：本仓库当前版本（`v0.3.2`）为**专供 DeepSeek Harness (DSH) 使用的原生插件与独立 Python 记忆核心**，运行过程完全不依赖 AstrBot。
 > 原先面向 QQ 群聊采集、好感度、黑话、人格学习、社交图谱及 AstrBot WebUI 的实现已独立拆分并迁入同级 **AstrBot_Memory_Framework** 仓库维护；两端仅共享不依赖宿主的纯检索融合与证据校验算法副本（`memory_framework_shared`），以便各自独立打包与安装。
 
 <a id="introduce"></a>
@@ -38,7 +38,7 @@
 插件由 **DSH 原生 Host/Client 适配器（TypeScript + React Dashboard）** 与 **本地权威记忆核心（Python + FastAPI + SQLite WAL + FTS5/FAISS）** 组成，通过有界上下文注入与受控记忆工具，让多个对话窗口共享同一套可追溯的事实、决策与任务验收状态。
 
 > [!NOTE]
-> **关于 Token 使用量与缓存命中率的提示**：启用本插件后，系统会在每轮对话准入阶段按预算注入当前关联任务的硬约束契约与高相关度长期记忆（`<memory-framework-context>`），同时允许模型在任务执行期间按需调用 `memory_search`、`memory_read`、`memory_task_update` 等记忆与任务工具。因此，相比未挂载记忆插件的纯对话，**本插件会导致单轮 Token 使用量有所增加，且在跨轮次动态召回记忆或任务状态发生变更时，可能会导致模型服务端的 KV Cache（前缀缓存）命中率出现小幅度下降**。详细预算上限与缓存优化机制见 [Token 消耗、上下文预算与缓存命中率说明](#llm-usage)。
+> **关于 Token 使用量与缓存命中率的提示**：启用本插件后，系统会在每轮对话准入阶段按预算注入当前关联任务的硬约束契约与高相关度长期记忆（`<memory-framework-context>`），同时允许模型在任务执行期间按需调用 `memory_framework_search`、`memory_framework_read`、`memory_framework_task_update` 等记忆与任务工具。因此，相比未挂载记忆插件的纯对话，**本插件会导致单轮 Token 使用量有所增加，且在跨轮次动态召回记忆或任务状态发生变更时，可能会导致模型服务端的 KV Cache（前缀缓存）命中率出现小幅度下降**。详细预算上限与缓存优化机制见 [Token 消耗、上下文预算与缓存命中率说明](#llm-usage)。
 
 ### 核心设计流
 
@@ -118,7 +118,7 @@ score = w_task * task_match
 npx @deepseek-ai/dsh@0.2.2-rc.1 plugin --profile web add "https://github.com/lingrs-LLM-researchTeam/dsh-Memory_FrameWork"
 
 # 或从本地构建的发行包安装
-npx @deepseek-ai/dsh@0.2.2-rc.1 plugin --profile web add "file:./dsh-memory-framework-0.3.1.tgz"
+npx @deepseek-ai/dsh@0.2.2-rc.1 plugin --profile web add "file:./dsh-memory-framework-0.3.2.tgz"
 ```
 
 ### 2. 启动 DSH 即可自动运行
@@ -160,7 +160,7 @@ npx @deepseek-ai/dsh@0.2.2-rc.1 plugin --profile web add "file:./dsh-memory-fram
 | `automatic_bytes` | `12,000` B | `1,000` – `128,000` B | 手动/未知容量模式下每轮自动注入上限（须为工具预留至少 `2,000` B 差额） |
 | `max_tool_calls` | `12` 次 | `1` – `50` 次 | 单轮允许模型调用记忆与任务工具的最大次数 |
 | `max_writes` | `3` 次 | `0` – `20` 次 | 单轮允许模型执行记忆写入或任务状态更新的最大次数 |
-| `source_chars` | `2,000` 字符 | `100` – `12,000` 字符 | `memory_read` 每次分页读取原始证据的最大字符数 |
+| `source_chars` | `2,000` 字符 | `100` – `12,000` 字符 | `memory_framework_read` 每次分页读取原始证据的最大字符数 |
 | `tool_memory_mode` | `evidence_only` | `evidence_only` / `allowlist` / `all` | 工具输出收录模式：默认仅保存原始证据待人工挑选，避免工具输出刷屏污染记忆库 |
 | `tool_max_chars` | `4,000` 字符 | `100` – `12,000` 字符 | 开启自动收录工具输出时的单条字符上限（超长、报错或同任务重复输出默认跳过） |
 | `embedding_daily_chars` | `200,000` 字符 | `1,000` – `10,000,000` 字符 | 工作区每日（UTC）向量化输入字符硬上限（查询与建索引共享，失败尝试亦计入） |
@@ -183,6 +183,9 @@ $env:MEMORY_EMBEDDING_DIMENSIONS = '1024'
 
 <a id="usage"></a>
 
+> 0.3.2 修复与 其他记忆插件潜在的同名工具调用风险，但是仍不能保证完全规避了这种情况，因此相当不建议您同时将此插件与其他插件进行加载。Memory Framework 的工具目前统一修改为使用 `memory_framework_*` 前缀来规避同名的情况。
+
+
 ## 功能面板、工具与排查
 
 ### Dashboard 六大视图
@@ -202,12 +205,12 @@ Dashboard 采用受 Moonshot AI 启发的高反差极简黑白（**夜墨 Ink / 
 
 | 工具名称 | 功能说明 |
 |---|---|
-| `memory_search` | 在当前会话授权范围内执行词法 + 语义混合检索，返回带来源 ID 与得分的记忆摘要 |
-| `memory_read` | 读取指定记忆详情，并按 `source_id` 与 `offset` 分页深读原始证据片段及 SHA-256 校验值 |
-| `memory_remember` | 基于当前会话已存在的真实 `source_ids` 与逐字匹配的 `quotes` 提议新增可追溯记忆 |
-| `memory_task_state` | 读取当前会话所绑定长程任务的目标、硬约束、下一步、阻塞项与验收状态 |
-| `memory_task_update` | 使用 `expected_revision` 更新任务的下一步（`next_action`）、阻塞项、决策或状态（未完成全部人工验收前禁止标记 `completed`） |
-| `memory_checkpoint` | 为当前绑定任务创建可回溯的进度检查点快照 |
+| `memory_framework_search` | 在当前会话授权范围内执行词法 + 语义混合检索，返回带来源 ID 与得分的记忆摘要 |
+| `memory_framework_read` | 读取指定记忆详情，并按 `source_id` 与 `offset` 分页深读原始证据片段及 SHA-256 校验值 |
+| `memory_framework_remember` | 基于当前会话已存在的真实 `source_ids` 与逐字匹配的 `quotes` 提议新增可追溯记忆 |
+| `memory_framework_task_state` | 读取当前会话所绑定长程任务的目标、硬约束、下一步、阻塞项与验收状态 |
+| `memory_framework_task_update` | 使用 `expected_revision` 更新任务的下一步（`next_action`）、阻塞项、决策或状态（未完成全部人工验收前禁止标记 `completed`） |
+| `memory_framework_checkpoint` | 为当前绑定任务创建可回溯的进度检查点快照 |
 
 ### 常见现象与排查
 
@@ -262,7 +265,7 @@ flowchart LR
 本插件在 DSH 对话链路中不调用额外的后台摘要大模型，但会在以下三个环节引入受控的上下文开销：
 
 1. **每轮前向上下文注入（`<memory-framework-context>`）**：在每个模型步骤开始前（`agent/pre-step`），若当前会话绑定了长程任务或存在匹配记忆，插件会将任务契约（目标、硬约束、下一步、验收状态）及高优召回记忆作为系统上下文注入。
-2. **模型主动工具调用（Agentic Memory Tools）**：模型在推理过程中若调用 `memory_search`、`memory_read`、`memory_task_update` 等工具，工具定义（Schema）、工具返回结果以及触发的额外推理轮次会计入主模型的输入/输出 Token。
+2. **模型主动工具调用（Agentic Memory Tools）**：模型在推理过程中若调用 `memory_framework_search`、`memory_framework_read`、`memory_framework_task_update` 等工具，工具定义（Schema）、工具返回结果以及触发的额外推理轮次会计入主模型的输入/输出 Token。
 3. **可选外部 Embedding 调用**：若配置了外部向量模型并开启工作区语义检索，新记忆入库与语义搜索会消耗 Embedding 接口 Token（受每日默认 `200,000` 字符的 `embedding_daily_chars` 硬上限保护）。
 
 ### 2. 为什么缓存命中率（Cache Hit Rate）可能出现小幅度下降？
@@ -327,9 +330,9 @@ cd ../..
 ```
 
 构建产物位于 `dist/dsh/`，包含：
-- `memory_framework_dsh-0.3.1-py3-none-any.whl`（Python 记忆核心与共享算法 Wheel）
-- `dsh-memory-framework-0.3.1.tgz`（DSH 原生插件与内嵌 Dashboard npm 包）
-- `memory-framework-dsh-0.3.1.zip`（含启动脚本、预构建包、独立 Dashboard、完整源码及 SHA-256 清单的一体化发行包）
+- `memory_framework_dsh-0.3.2-py3-none-any.whl`（Python 记忆核心与共享算法 Wheel）
+- `dsh-memory-framework-0.3.2.tgz`（DSH 原生插件与内嵌 Dashboard npm 包）
+- `memory-framework-dsh-0.3.2.zip`（含启动脚本、预构建包、独立 Dashboard、完整源码及 SHA-256 清单的一体化发行包）
 
 ---
 

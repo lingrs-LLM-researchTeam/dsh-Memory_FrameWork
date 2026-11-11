@@ -9,7 +9,7 @@
 1. 安装 DSH 插件（若使用 Desktop，请将 `web` 替换为实际 profile）：
 
 ```powershell
-npx @deepseek-ai/dsh@0.2.2-rc.1 plugin --profile web add "file:./dsh-memory-framework-0.3.1.tgz"
+npx @deepseek-ai/dsh@0.2.2-rc.1 plugin --profile web add "file:./dsh-memory-framework-0.3.2.tgz"
 ```
 
 2. 直接启动或重载对应 DSH。插件内置了 Python 记忆核心 wheel 包，默认在 DSH 启动时自动于 `~/.memory-framework/runtime` 创建独立 Python 环境、生成 `credentials.json` 并在后台启动本地核心服务（默认监听 `http://127.0.0.1:18765`），无需在插件目录下手动运行启动脚本。
@@ -30,7 +30,7 @@ npx @deepseek-ai/dsh@0.2.2-rc.1 plugin --profile web add "file:./dsh-memory-fram
 
 任务迁移会解除旧会话绑定，清除旧工作环境下的验收证据，不自动移动历史记忆或扩大共享范围。请在目标工作区的会话中重新绑定任务。
 
-模型可调用 `memory_search`、`memory_read`、`memory_remember`、`memory_task_state`、`memory_task_update`、`memory_checkpoint`。模型不能管理共享授权、替换用户约束或自行完成用户验收。
+模型可调用 `memory_framework_search`、`memory_framework_read`、`memory_framework_remember`、`memory_framework_task_state`、`memory_framework_task_update`、`memory_framework_checkpoint`。模型不能管理共享授权、替换用户约束或自行完成用户验收。
 
 ## 可选向量模型
 
@@ -108,3 +108,8 @@ Dashboard 默认夜墨，可切换纸白，使用系统字体与轻量 CSS；无
 预算页三个工作区开关改为整行可点击的按钮：50 × 30 像素轨道、14 像素标题、11 像素说明，滑块在 240 ms 内移动，×／√ 交替出现，渐变背景在 220 ms 内显现。支持空格／回车和读屏状态；修改后仍需「保存策略」，不会因切换意外提交。暂停开关明确显示「已暂停／未暂停」。390 像素窄屏及原生窄侧栏可自动换行。
 
 不使用 Canvas、WebGL、模糊滤镜、逐帧 React 更新或第三方动画库。性能采样及截图见详细技术报告第 14 节。0.3.1 不改变上下文算法、schema 3 或权限规则。
+
+
+## 0.3.2 工具同名冲突修复
+
+DSH 全局工具名必须唯一。该项目的旧版插件可能会与 dsh-linghun 在内的部分记忆插件同时注册 memory_read 导致本插件装载失败；本版本六个工具统一使用 memory_framework_ 前缀，理论可避免此问题，但实际仍不建议您与其他记忆辅助插件一同使用，否则仍然可能导致意外的情况

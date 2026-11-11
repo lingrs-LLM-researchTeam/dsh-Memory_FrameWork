@@ -1,0 +1,63 @@
+{
+  "date": "2026-11-11",
+  "version": "0.3.0",
+  "core_tests": 40,
+  "typescript_tests": 8,
+  "typecheck": true,
+  "build": true,
+  "browser": {
+    "onboarding_persistent": true,
+    "cross_window_conflict_blocked": true,
+    "dirty_draft_preserved": true,
+    "manual_and_follow_saved": true,
+    "per_session_capacity": true,
+    "mobile_460_overflow": false,
+    "narrow_container_460_overflow": false,
+    "page_errors": 0,
+    "canvas_or_video": 0,
+    "active_animations": 0,
+    "remote_assets": 0
+  },
+  "performance": {
+    "method": "Chromium CDP Performance.getMetrics, isolated fixture, single samples; not OS RSS/CPU/GPU metrics",
+    "small_fixture": {
+      "memories": 53,
+      "cards": 24,
+      "dom_nodes": 550,
+      "seconds": 21,
+      "renderer_task_ms": 14,
+      "js_heap_mb": 15.16,
+      "snapshot_requests": 2
+    },
+    "large_fixture": {
+      "memories": 1000,
+      "cards": 24,
+      "dom_nodes": 550,
+      "seconds": 21,
+      "renderer_task_ms": 45,
+      "js_heap_mb": 9.89
+    },
+    "background_note": "Automation kept document visible after tab switch; real OS background transition unverified. Unit tests and synthetic visibilitychange on actual UI verified 0 requests in 11 hidden seconds and 1 immediate request on resume."
+  },
+  "context": {
+    "default_mode": "follow_dsh",
+    "default_share_percent": 10,
+    "output_reserve_example": 8192,
+    "384k_auto_bytes": 37580,
+    "500k_auto_bytes": 49180,
+    "hard_auto_bytes_cap": 128000,
+    "unknown_capacity": "manual bounded fallback",
+    "sizing": "UTF-8 bytes; not actual tokenizer count"
+  },
+  "schema": 3,
+  "reference_plugin": "dsh-guizang-design@0.1.3",
+  "reference_site": "https://www.moonshot.ai/ja",
+  "paid_model_calls": 0,
+  "production_dsh_profile_modified": false,
+  "production_dsh_live_run": false,
+  "astrbot_modified_this_iteration": false,
+  "installed_wheel_tests": 40,
+  "installed_wheel_version": "0.3.0",
+  "npm_lock_metadata_verified": true,
+  "installed_npm_versions_match_lock": true
+}

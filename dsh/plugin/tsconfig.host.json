@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/index.ts",
+    "src/core-supervisor.ts",
+    "src/runtime.ts",
+    "src/tools.ts",
+    "src/transport.ts",
+    "src/gateway.ts",
+    "src/contracts.ts"
+  ],
+  "exclude": ["src/client.tsx", "src/standalone.tsx"]
+}

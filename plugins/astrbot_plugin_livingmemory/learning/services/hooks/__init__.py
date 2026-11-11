@@ -1,1 +1,0 @@
-"""LLM hook processing — context providers and hook handler."""

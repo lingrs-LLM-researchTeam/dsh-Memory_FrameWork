@@ -1,0 +1,47 @@
+{
+  "date": "2026-11-11",
+  "version": "0.3.1",
+  "scope": "Dashboard motion and three workspace policy switches; core behavior unchanged",
+  "typescript_tests": 8,
+  "typecheck": true,
+  "build": true,
+  "browser": {
+    "keyboard_space_enter": true,
+    "no_implicit_form_submit": true,
+    "saved_state_persisted": true,
+    "track_pixels": [
+      50,
+      30
+    ],
+    "label_font_px": 14,
+    "description_font_px": 11,
+    "desktop_row_min_height_px": 78,
+    "narrow_viewport_width": 390,
+    "narrow_container_width": 390,
+    "horizontal_overflow": false,
+    "cross_to_tick_and_gradient": true,
+    "offscreen_animation_paused": true,
+    "hidden_visibility_event_paused": true,
+    "hidden_test_method": "synthetic document.visibilityState + visibilitychange, real CSS animations",
+    "finite_two_cycles": true,
+    "snapshot_poll_does_not_restart_animation": true,
+    "user_motion_preference_persists": true,
+    "prefers_reduced_motion_respected": true,
+    "page_errors": 0
+  },
+  "performance": {
+    "method": "Chromium CDP Performance.getMetrics; single sample; not OS process CPU/RSS or GPU measurement",
+    "fixture_memories": 1000,
+    "dot_elements": 15,
+    "active_phase_seconds": 8,
+    "active_phase_renderer_task_ms": 100,
+    "idle_phase_seconds": 11,
+    "idle_phase_renderer_task_ms": 16,
+    "js_heap_mb": 10.5,
+    "active_animations_after_finish": 0
+  },
+  "production_profile_modified": false,
+  "paid_model_calls": 0,
+  "schema": 3,
+  "previous_core_regression": "dsh-installed-0.3.0.xml (40 passed; core unchanged except release version)"
+}

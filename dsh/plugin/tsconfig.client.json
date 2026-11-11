@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/client.tsx",
+    "src/standalone.tsx",
+    "src/dashboard.tsx",
+    "src/ui-models.ts",
+    "src/styles.ts",
+    "src/contracts.ts"
+  ]
+}

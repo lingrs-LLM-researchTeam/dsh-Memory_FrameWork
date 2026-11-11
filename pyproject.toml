@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=80", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "memory-framework-dsh"
+version = "0.3.1"
+description = "Evidence-backed memory and task state for DeepSeek Harness"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = ["fastapi>=0.124,<1", "uvicorn>=0.38,<1", "pydantic>=2.12,<3", "httpx>=0.28,<1", "jieba==0.42.1", "setuptools>=80,<81", "numpy>=2.2,<3", "faiss-cpu>=1.12,!=1.14.2"]
+
+[project.optional-dependencies]
+test = ["pytest>=8.4,<9", "pytest-asyncio>=1.2,<2", "aiosqlite>=0.21,<1", "build>=1.3,<2", "wheel>=0.45,<1"]
+
+[project.scripts]
+memory-framework = "memory_framework.__main__:main"
+
+[tool.setuptools]
+packages = ["memory_framework", "memory_framework_shared"]
+package-dir = {memory_framework = "dsh/core/memory_framework", memory_framework_shared = "shared/memory_framework_shared"}
+
+[tool.pytest.ini_options]
+testpaths = ["dsh/tests"]
+addopts = "-ra"
+

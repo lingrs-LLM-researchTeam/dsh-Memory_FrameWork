@@ -1,0 +1,35 @@
+{
+  "date": "2026-11-11",
+  "version": "0.1.0",
+  "dsh_sdk": "0.2.2-rc.1",
+  "node": "24.12.0",
+  "core_python": "3.13.2",
+  "legacy_python": "3.12.11",
+  "legacy_astrbot": "4.29.4",
+  "wheel_install": {"python": "3.12.11", "core_tests_passed": 25, "second_writer_rejected": true},
+  "tests": {
+    "core": {"passed": 25, "failed": 0},
+    "astrbot_regressions": {"passed": 78, "failed": 0},
+    "typescript_gateway_and_artifacts": {"passed": 4, "failed": 0},
+    "unified_modules": {"passed": 7, "failed": 0},
+    "distribution": {"passed": 7, "failed": 0}
+  },
+  "http_integration": {"checks": 5, "status": "passed", "details": "dsh-http-integration.json"},
+  "browser": {
+    "login": "passed",
+    "memory_create": "passed",
+    "second_tab_reads_created_memory": "passed",
+    "scope_and_importance_update": "passed",
+    "weight_preview_and_save": "passed",
+    "weight_state_survives_daemon_restart": "passed",
+    "concurrent_weight_update_rejected": "passed",
+    "viewport_width": 460,
+    "document_scroll_width": 460
+  },
+  "npm_audit": {"total": 0},
+  "limitations": [
+    "No real paid-model long-horizon accuracy benchmark",
+    "Not enabled in the user's actual DSH Desktop profile",
+    "External embedding provider not exercised; FAISS route uses deterministic test vectors"
+  ]
+}

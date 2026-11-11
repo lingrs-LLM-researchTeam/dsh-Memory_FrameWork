@@ -1,0 +1,95 @@
+{
+  "source_files_verified": 749,
+  "plugins": [
+    {
+      "plugin": "astrbot_plugin_livingmemory",
+      "version": "2.7.0-beta.3+memoryfw.6",
+      "extracted_files": 477,
+      "real_astrbot_extractor": true,
+      "dependencies": [
+        {
+          "name": "networkx",
+          "version": "3.7"
+        },
+        {
+          "name": "jieba",
+          "version": "0.42.1"
+        },
+        {
+          "name": "pytz",
+          "version": "2026.6"
+        },
+        {
+          "name": "aiofiles",
+          "version": "25.1.0"
+        },
+        {
+          "name": "aiosqlite",
+          "version": "0.22.1"
+        },
+        {
+          "name": "faiss-cpu",
+          "version": "1.16.0"
+        },
+        {
+          "name": "numpy",
+          "version": "2.5.4"
+        },
+        {
+          "name": "sqlalchemy",
+          "version": "2.1.8"
+        },
+        {
+          "name": "pydantic",
+          "version": "2.14.3"
+        },
+        {
+          "name": "fastapi",
+          "version": "0.162.4"
+        },
+        {
+          "name": "uvicorn",
+          "version": "0.54.0"
+        },
+        {
+          "name": "itsdangerous",
+          "version": "2.2.0"
+        },
+        {
+          "name": "jinja2",
+          "version": "3.1.6"
+        },
+        {
+          "name": "aiohttp",
+          "version": "3.14.5"
+        },
+        {
+          "name": "emoji",
+          "version": "2.14.1"
+        },
+        {
+          "name": "cachetools",
+          "version": "8.0.0"
+        },
+        {
+          "name": "apscheduler",
+          "version": "3.11.3"
+        },
+        {
+          "name": "defusedxml",
+          "version": "0.7.1"
+        },
+        {
+          "name": "json-repair",
+          "version": "0.64.9"
+        }
+      ]
+    }
+  ],
+  "dashboard_assets_verified": [
+    "index-2tAEzNug.js",
+    "echarts-hGW9y9vW.js",
+    "index-RN-nTta-.css"
+  ],
+  "production_data_packaged": false
+}

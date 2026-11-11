@@ -1,0 +1,12 @@
+{
+  "status": "passed",
+  "checks": [
+    "cross-session task memory",
+    "workspace isolation",
+    "concurrent revision conflict",
+    "unsupported completion rejected",
+    "revocation fences exposed window"
+  ],
+  "count": 5,
+  "transport": "real DSH Gateway + CoreClient + FastAPI + SQLite"
+}

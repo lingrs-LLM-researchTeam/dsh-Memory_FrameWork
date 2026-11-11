@@ -58,3 +58,9 @@ astrbot_plugin_*_config.json
 .DS_Store
 Thumbs.db
 Desktop.ini
+/dsh/plugin/lib/
+/dsh/plugin/dashboard/
+/dsh/plugin/.compiled/
+/output/
+/.playwright-cli/
+/build/

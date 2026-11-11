@@ -326,14 +326,7 @@ cd ../..
 
 <a id="documentation"></a>
 
-## 保留文档与来源说明
-
-- [DSH 安装与使用说明](dsh/README.md)
-- [Memory Framework 0.3.1 详细开发技术报告](docs/DSH开发技术报告.md)
-- [DSH 适配契约研究记录](docs/research/dsh-implementation-contracts.md)
-- [历史低流量合批对照报告](docs/低流量合批对照-20261104.md) · [四时点增量整理与离线对照](docs/四时点增量整理与离线对照-20261104.md)
-
-### 致谢与开源许可
+## 致谢与开源许可
 
 本项目的检索融合、证据追溯与长程记忆演进设计继承自团队早期长期记忆框架研究，并感谢上游社区项目 [astrbot_plugin_livingmemory](https://github.com/lxfight-s-Astrbot-Plugins/astrbot_plugin_livingmemory)（lxfight）与 [astrbot_plugin_self_learning](https://github.com/NickCharlie/astrbot_plugin_self_learning)（NickMo / 莫志平、EterUltimate）在早期版本中的设计启发；与 AstrBot 相关的群聊及学习组件现已完整迁入同级 `AstrBot_Memory_Framework` 仓库并保留全部原始署名与版权声明。
 

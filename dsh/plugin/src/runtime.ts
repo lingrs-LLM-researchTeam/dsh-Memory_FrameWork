@@ -1,7 +1,17 @@
 import type { JsonValue } from "./contracts.js";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import {
+  appendFileSync,
+  closeSync,
+  existsSync,
+  fsyncSync,
+  ftruncateSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
@@ -89,13 +99,64 @@ export class MemoryRuntime {
     );
     mkdirSync(dirname(this.journal), { recursive: true });
     if (existsSync(this.journal)) {
-      for (const line of readFileSync(this.journal, "utf8")
-        .split("\n")
-        .filter(Boolean)) {
-        const row = JournalRow.parse(JSON.parse(line));
+      const contents = readFileSync(this.journal);
+      const lines = contents.toString("utf8").split("\n");
+      let damagedTail: Buffer | undefined;
+      for (const [index, line] of lines.entries()) {
+        if (!line) continue;
+        let value: unknown;
+        try {
+          value = JSON.parse(line);
+        } catch (error) {
+          // Only an unterminated final record can be a torn append. Earlier or
+          // newline-terminated corruption must still stop startup.
+          if (index !== lines.length - 1) throw error;
+          damagedTail = contents.subarray(contents.lastIndexOf(0x0a) + 1);
+          break;
+        }
+        const row = JournalRow.parse(value);
         const key = row.sessionId + ":" + row.messageId;
         if (row.admitted) this.pending.delete(key);
         else this.pending.set(key, row);
+      }
+      if (damagedTail) {
+        // Preserve the exact bytes before removing only the incomplete tail.
+        // Never rewrite the valid prefix, which may contain unprocessed input.
+        const backup = this.journal + ".corrupt-" + randomUUID();
+        writeFileSync(backup, damagedTail, {
+          flag: "wx",
+          mode: 0o600,
+          flush: true,
+        });
+        // Persist the new backup name before truncating on POSIX. Node cannot
+        // portably fsync directories on Windows; there we only promise recovery
+        // from a process interruption, not a system/power failure.
+        if (process.platform !== "win32") {
+          const directory = openSync(dirname(this.journal), "r");
+          try {
+            fsyncSync(directory);
+          } finally {
+            closeSync(directory);
+          }
+        }
+        const fd = openSync(this.journal, "r+");
+        try {
+          if (!readFileSync(fd).equals(contents))
+            throw new Error("Memory journal changed during recovery; retry startup");
+          ftruncateSync(fd, contents.length - damagedTail.length);
+          fsyncSync(fd);
+        } finally {
+          closeSync(fd);
+        }
+        this.ctx.logger.warn(
+          "Memory journal recovered an incomplete tail; preserved %s bytes in %s",
+          damagedTail.length,
+          backup,
+        );
+      } else if (contents.length && contents.at(-1) !== 0x0a) {
+        // A complete JSON record without its final newline must not be joined
+        // to the next append.
+        appendFileSync(this.journal, "\n", { encoding: "utf8", flush: true });
       }
     }
   }

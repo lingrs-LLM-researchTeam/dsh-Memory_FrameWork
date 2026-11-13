@@ -168,9 +168,10 @@ class RRFFusion:
     ) -> list[FusedResult]:
         """按归一化分数融合两路结果（分数级融合）。
 
-        与 fuse() 的排名级融合不同：先在本次查询内把每一路的分数 min-max
-        归一化到 [0, 1]，再按权重求和。某一路没有结果时按可用路线重新归一化
-        权重，避免弱路仅凭"名次存在"就稀释强路的头部结果。
+        与 fuse() 的排名级融合不同：先将每一路的非负分数除以该路最高分，
+        归一化到 [0, 1]，再按权重求和。以零为基线，避免最低正分被强制归零。
+        某一路没有结果时按可用路线重新归一化权重，避免弱路仅凭"名次存在"
+        就稀释强路的头部结果。归一化分数表示本次查询内的相对强度，不是概率。
 
         Args:
             bm25_results: BM25 结果（按分数降序）
@@ -192,15 +193,12 @@ class RRFFusion:
         def normalize(results) -> dict[int, float]:
             if not results:
                 return {}
-            values = {r.doc_id: float(r.score) for r in results}
-            low, high = min(values.values()), max(values.values())
-            if high - low < 1e-9:
-                # 分数无区分度时交给并列名次决定顺序
-                return dict.fromkeys(values, 1.0)
-            return {
-                doc_id: (value - low) / (high - low)
-                for doc_id, value in values.items()
-            }
+            values = {r.doc_id: max(0.0, float(r.score)) for r in results}
+            high = max(values.values())
+            if high <= 0:
+                return dict.fromkeys(values, 0.0)
+            # BM25 可能给出很小的正分，不能用固定 epsilon 抹掉它们之间的比例。
+            return {doc_id: value / high for doc_id, value in values.items()}
 
         bm25_norm = normalize(bm25_results)
         vector_norm = normalize(vector_results)

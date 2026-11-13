@@ -1,4 +1,5 @@
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -55,11 +56,40 @@ export async function isCoreHealthy(
   }
 }
 
-function canImportMemoryFramework(pythonExe: string): boolean {
+function canImportMemoryFramework(
+  pythonExe: string,
+  sourceRoot?: string,
+): boolean {
   try {
     execFileSync(
       pythonExe,
-      ["-c", "import memory_framework, memory_framework_shared"],
+      [
+        "-c",
+        "import memory_framework, memory_framework_shared" +
+          (sourceRoot
+            ? "; import sys; from pathlib import Path; " +
+              "raise SystemExit(0 if " +
+              "Path(memory_framework.__file__).resolve() == Path(sys.argv[1]).resolve() and " +
+              "Path(memory_framework_shared.__file__).resolve() == Path(sys.argv[2]).resolve() else 1)"
+            : ""),
+        ...(sourceRoot
+          ? [
+              join(
+                sourceRoot,
+                "dsh",
+                "core",
+                "memory_framework",
+                "__init__.py",
+              ),
+              join(
+                sourceRoot,
+                "shared",
+                "memory_framework_shared",
+                "__init__.py",
+              ),
+            ]
+          : []),
+      ],
       {
         stdio: "ignore",
         timeout: 8000,
@@ -158,6 +188,31 @@ function findBundledWheel(pluginRoot: string, repoRoot: string): string | null {
   return null;
 }
 
+function sourceStamp(repoRoot: string): string {
+  const hash = createHash("sha256");
+  const addFile = (path: string) => {
+    hash
+      .update(path)
+      .update("\0")
+      .update(readFileSync(join(repoRoot, path)))
+      .update("\0");
+  };
+  const addDirectory = (path: string) => {
+    for (const entry of readdirSync(join(repoRoot, path), {
+      withFileTypes: true,
+    }).sort((a, b) => a.name.localeCompare(b.name))) {
+      if (entry.name === "__pycache__") continue;
+      const child = join(path, entry.name);
+      if (entry.isDirectory()) addDirectory(child);
+      else if (entry.isFile() && entry.name.endsWith(".py")) addFile(child);
+    }
+  };
+  addFile("pyproject.toml");
+  addDirectory(join("dsh", "core", "memory_framework"));
+  addDirectory(join("shared", "memory_framework_shared"));
+  return `source-sha256:${hash.digest("hex")}`;
+}
+
 export function resolvePythonRuntime(
   dataDir: string,
   pluginRoot: string,
@@ -170,14 +225,14 @@ export function resolvePythonRuntime(
       : join(root, "bin", "python");
 
   const repoRoot = resolveRepoRoot(pluginRoot);
-  // Fast path for source repository checkouts with an existing virtualenv
+  // Reuse editable checkout environments, not stale copies in site-packages.
   if (existsSync(join(repoRoot, "pyproject.toml"))) {
     for (const candidateRoot of [
       join(repoRoot, ".venv"),
       join(repoRoot, "dsh", ".venv"),
     ]) {
       const exe = venvBin(candidateRoot);
-      if (existsSync(exe) && canImportMemoryFramework(exe)) {
+      if (existsSync(exe) && canImportMemoryFramework(exe, repoRoot)) {
         return exe;
       }
     }
@@ -214,17 +269,20 @@ export function resolvePythonRuntime(
     return runtimePython;
   }
 
-  if (canImportMemoryFramework(runtimePython)) {
+  if (existsSync(join(repoRoot, "pyproject.toml"))) {
+    const stamp = sourceStamp(repoRoot);
+    if (currentStamp !== stamp || !canImportMemoryFramework(runtimePython)) {
+      execFileSync(runtimePython, ["-m", "pip", "install", repoRoot], {
+        stdio: "ignore",
+        timeout: 300000,
+        windowsHide: true,
+      });
+      writeFileSync(stampFile, stamp, "utf8");
+    }
     return runtimePython;
   }
 
-  if (existsSync(join(repoRoot, "pyproject.toml"))) {
-    execFileSync(runtimePython, ["-m", "pip", "install", repoRoot], {
-      stdio: "ignore",
-      timeout: 300000,
-      windowsHide: true,
-    });
-    writeFileSync(stampFile, "source-editable", "utf8");
+  if (canImportMemoryFramework(runtimePython)) {
     return runtimePython;
   }
 

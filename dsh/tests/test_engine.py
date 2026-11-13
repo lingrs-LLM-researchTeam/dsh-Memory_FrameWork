@@ -210,6 +210,63 @@ def test_completion_requires_current_user_acceptance(engine):
     assert engine.execute("task.read", {}, "a1")["status"] == "verifying"
 
 
+@pytest.mark.parametrize("replace_evidence", [False, True])
+@pytest.mark.parametrize("already_completed", [False, True])
+def test_acceptance_revocation_survives_evidence_edits(
+    engine, replace_evidence, already_completed
+):
+    t = task(engine)
+    bind(engine, "a1", t["id"])
+    t = admin(
+        engine,
+        "task.verify",
+        {
+            "id": t["id"],
+            "expected_revision": t["revision"],
+            "criterion": t["acceptance"][0],
+            "note": "已在重启测试中确认恢复成功",
+        },
+    )
+    acceptance_source = t["verification"][t["acceptance"][0]]["source_id"]
+    evidence_ids = memory(engine, scope="task")["source_ids"] if replace_evidence else []
+    if already_completed:
+        t = engine.execute(
+            "task.update",
+            {"id": t["id"], "expected_revision": t["revision"], "status": "completed"},
+            "a1",
+        )
+    t = engine.execute(
+        "task.update",
+        {
+            "id": t["id"],
+            "expected_revision": t["revision"],
+            "status": "completed",
+            "evidence_ids": evidence_ids,
+        },
+        "a1",
+    )
+    assert t["status"] == "completed"
+    assert t["evidence_ids"] == evidence_ids
+    assert t["verification"][t["acceptance"][0]]["source_id"] == acceptance_source
+
+    admin(engine, "source.revoke", {"id": acceptance_source, "expected_revision": 1})
+    invalidated = engine.execute("task.read", {}, "a1")
+    assert invalidated["status"] == "verifying"
+    assert invalidated["verification"] == {}
+    assert invalidated["revision"] == t["revision"] + 1
+    with pytest.raises(DomainError) as ex:
+        engine.execute(
+            "task.update",
+            {
+                "id": t["id"],
+                "expected_revision": invalidated["revision"],
+                "status": "completed",
+            },
+            "a1",
+        )
+    assert ex.value.code == "verification_required"
+
+
 def test_task_move_does_not_grant_old_memory_or_rewrite_session(engine):
     t = task(engine)
     bind(engine, "a1", t["id"])

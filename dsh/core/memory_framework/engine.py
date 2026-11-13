@@ -507,7 +507,10 @@ class Engine:
             )
         for row in db.execute("SELECT id FROM tasks").fetchall():
             task = self._task(db, row["id"])
-            if source_id in task.get("evidence_ids", []):
+            if source_id in task.get("evidence_ids", []) or any(
+                entry["source_id"] == source_id
+                for entry in task.get("verification", {}).values()
+            ):
                 task["status"] = "verifying"
                 task["verification"] = {}
                 task["revision"] += 1

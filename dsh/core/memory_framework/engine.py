@@ -110,11 +110,29 @@ class Engine:
             Weights.model_validate_json(profile[0]).context_chars,
         )
 
-    def _embed(self, wid, text, *, query=False):
+    def _embedding_current(self, db, memory):
+        current = db.execute(
+            "SELECT * FROM memories WHERE id=?", (memory["id"],)
+        ).fetchone()
+        return (
+            current is not None
+            and current["revision"] == memory["revision"]
+            and current["content"] == memory["content"]
+            and current["workspace_id"] == memory["workspace_id"]
+            and current["status"] == "active"
+            and bool(current["vector_enabled"])
+            and self._evidence(db, memory["id"])[0]
+        )
+
+    def _embed(self, wid, text, *, query=False, memory=None):
         # Serializes dimension discovery and avoids duplicate concurrent requests for the same query.
         with self.embedding_lock:
             key = (self.embeddings.config_key, fingerprint(text))
             with self.db.transaction() as db:
+                # Batch selection is only a hint. Revalidate after waiting for the
+                # embedding lock and before charging quota or admitting a request.
+                if memory is not None and not self._embedding_current(db, memory):
+                    return None
                 policy = self._policy(db, wid)
                 if not policy.embedding_enabled or (
                     not query and policy.indexing_paused
@@ -140,6 +158,9 @@ class Engine:
                     "UPDATE embedding_usage SET input_chars=input_chars+?,calls=calls+1 WHERE workspace_id=? AND day=?",
                     (len(text), wid, day),
                 )
+            # Do not hold a SQLite transaction over network I/O. Changes after
+            # admission cannot retract this request; index_pending checks again
+            # before publishing its result.
             vector = self.embeddings.embed(text)
             with self.db.transaction() as db:
                 db.execute(
@@ -1818,7 +1839,7 @@ class Engine:
         count = 0
         for row in rows:
             try:
-                vector = self._embed(row["workspace_id"], row["content"])
+                vector = self._embed(row["workspace_id"], row["content"], memory=row)
             except Exception:
                 with self.db.transaction() as db:
                     previous = db.execute(
@@ -1838,19 +1859,13 @@ class Engine:
             if vector is None:
                 continue
             with self.db.transaction() as db:
-                current = self._row(db, "memories", row["id"])
-                if (
-                    current["content"] != row["content"]
-                    or current["status"] != "active"
-                    or not current["vector_enabled"]
-                    or not self._evidence(db, row["id"])[0]
-                ):
+                if not self._embedding_current(db, row):
                     continue
                 db.execute(
                     "INSERT OR REPLACE INTO embeddings VALUES(?,?,?,?)",
                     (
                         row["id"],
-                        current["revision"],
+                        row["revision"],
                         self.embeddings.fingerprint,
                         dump(vector),
                     ),

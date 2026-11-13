@@ -242,10 +242,10 @@ flowchart LR
 
 | 源码目录 | 维护职责 |
 |---|---|
-| [`dsh/core/memory_framework`](file:///e:/Github_repo/Memory_FrameWork/dsh/core/memory_framework) | Python 记忆核心：SQLite 事务、权限与来源校验、任务状态机、每轮证据预算、FastAPI 环回服务 |
-| [`dsh/plugin/src`](file:///e:/Github_repo/Memory_FrameWork/dsh/plugin/src) | DSH 原生插件：事件采集、模型准入钩子、6 个受控工具、跨窗口广播轮询、React Dashboard |
-| [`shared/memory_framework_shared`](file:///e:/Github_repo/Memory_FrameWork/shared/memory_framework_shared) | 跨平台纯算法层：来源标识、逐字引用校验、中文分词扩展、BM25 与 RRF 融合排序 |
-| [`tools/`](file:///e:/Github_repo/Memory_FrameWork/tools) | 发行构建（`build_dsh_release.py`）、宿主隔离静态检查（`check_distribution.py`）与演示种子脚本 |
+| [`dsh/core/memory_framework`](./dsh/core/memory_framework) | Python 记忆核心：SQLite 事务、权限与来源校验、任务状态机、每轮证据预算、FastAPI 环回服务 |
+| [`dsh/plugin/src`](./dsh/plugin/src) | DSH 原生插件：事件采集、模型准入钩子、6 个受控工具、跨窗口广播轮询、React Dashboard |
+| [`shared/memory_framework_shared`](./shared/memory_framework_shared) | 跨平台纯算法层：来源标识、逐字引用校验、中文分词扩展、BM25 与 RRF 融合排序 |
+| [`tools/`](./tools) | 发行构建（`build_dsh_release.py`）、宿主隔离静态检查（`check_distribution.py`）与演示种子脚本 |
 
 核心严格区分三类调用通道：
 - **`host` 通道**（`/v1/host`）：仅供 DSH Host 插件同步工作区/会话、提交可信 `turn.begin` 序号、同步模型路由容量（`context.sync`）与准备注入快照（`context.prepare`）。

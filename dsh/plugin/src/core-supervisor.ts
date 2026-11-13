@@ -257,14 +257,27 @@ export function resolvePythonRuntime(
     : "";
 
   if (wheelPath) {
-    const wheelId = wheelPath.split(/[\\/]/).pop()!;
-    if (currentStamp !== wheelId || !canImportMemoryFramework(runtimePython)) {
+    // A rebuilt wheel can keep its filename and version while its bytes change.
+    const stamp = `wheel-sha256:${createHash("sha256")
+      .update(readFileSync(wheelPath))
+      .digest("hex")}`;
+    if (currentStamp !== stamp || !canImportMemoryFramework(runtimePython)) {
+      execFileSync(
+        runtimePython,
+        ["-m", "pip", "install", "--force-reinstall", "--no-deps", wheelPath],
+        {
+          stdio: "ignore",
+          timeout: 300000,
+          windowsHide: true,
+        },
+      );
+      // Resolve the installed wheel's dependencies without forcing their upgrade.
       execFileSync(runtimePython, ["-m", "pip", "install", wheelPath], {
         stdio: "ignore",
         timeout: 300000,
         windowsHide: true,
       });
-      writeFileSync(stampFile, wheelId, "utf8");
+      writeFileSync(stampFile, stamp, "utf8");
     }
     return runtimePython;
   }

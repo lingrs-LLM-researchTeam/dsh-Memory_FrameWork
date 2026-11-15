@@ -191,23 +191,43 @@ function Editor({
               </label>
             ))}
           </div>
-          <label className="mf-label">
-            工具输出自动收录
-            <select
-              aria-label="工具输出自动收录"
-              value={draft.tool_memory_mode}
-              onChange={(e) =>
-                change(
-                  "tool_memory_mode",
-                  e.target.value as Policy["tool_memory_mode"],
-                )
-              }
-            >
-              <option value="evidence_only">仅保留原始证据，手动收录</option>
-              <option value="allowlist">只自动收录指定工具</option>
-              <option value="all">自动收录符合长度限制的工具</option>
-            </select>
-          </label>
+          <div className="mf-form-grid">
+            <label className="mf-label">
+              用户发言自动收录
+              <select
+                aria-label="用户发言自动收录"
+                value={draft.user_memory_mode}
+                onChange={(e) =>
+                  change(
+                    "user_memory_mode",
+                    e.target.value as Policy["user_memory_mode"],
+                  )
+                }
+              >
+                <option value="evidence_only">
+                  仅保留聊天记录与来源证据，按需收录（推荐，保护缓存）
+                </option>
+                <option value="all">每句发言自动生成记忆</option>
+              </select>
+            </label>
+            <label className="mf-label">
+              工具输出自动收录
+              <select
+                aria-label="工具输出自动收录"
+                value={draft.tool_memory_mode}
+                onChange={(e) =>
+                  change(
+                    "tool_memory_mode",
+                    e.target.value as Policy["tool_memory_mode"],
+                  )
+                }
+              >
+                <option value="evidence_only">仅保留原始证据，手动收录</option>
+                <option value="allowlist">只自动收录指定工具</option>
+                <option value="all">自动收录符合长度限制的工具</option>
+              </select>
+            </label>
+          </div>
           <label className="mf-label">
             允许自动收录的工具名称（每行一个）
             <textarea
@@ -271,7 +291,7 @@ function Editor({
         </form>
       </section>
       <section className="mf-panel">
-        <h2>待收录工具证据</h2>
+        <h2>待收录对话与工具证据</h2>
         {snapshot.source_candidates
           .filter((s) => s.workspace_id === current.workspace_id)
           .slice(0, candidateLimit)

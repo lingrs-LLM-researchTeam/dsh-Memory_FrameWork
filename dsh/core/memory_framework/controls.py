@@ -17,22 +17,17 @@ def excerpt(text, chars):
 
 
 def memory_view(memory, chars):
-    fields = (
-        "id",
-        "revision",
-        "content",
-        "kind",
-        "scope",
-        "importance",
-        "source_ids",
-        "epistemic_status",
-        "evidence_current",
-        "conflicts_with",
-        "final_score",
-    )
-    result = {k: memory[k] for k in fields if k in memory}
-    result["content"] = excerpt(memory["content"], chars)
-    result["content_truncated"] = len(result["content"]) < len(memory["content"])
+    content = excerpt(memory["content"], chars)
+    truncated = len(content) < len(memory["content"])
+    result = {
+        "id": memory["id"],
+        "content": content,
+        "source_ids": memory.get("source_ids", []),
+    }
+    if truncated:
+        result["content_truncated"] = True
+    if memory.get("conflicts_with"):
+        result["conflicts_with"] = memory["conflicts_with"]
     return result
 
 
@@ -46,6 +41,24 @@ def bounded_result(result, allowance, chars, *, mutation=False):
         while result["results"] and wire_bytes(result) > allowance:
             result["results"].pop()
             result["truncated"] = True
+    elif "entries" in result:
+        result = {**result, "entries": list(result["entries"])}
+        while result["entries"] and wire_bytes(result) > allowance:
+            # Drop oldest entry in the page first so the tail stays intact, and update next_before_sequence.
+            dropped = result["entries"].pop(0)
+            result["has_more"] = True
+            result["next_before_sequence"] = (
+                result["entries"][0]["sequence"]
+                if result["entries"]
+                else dropped["sequence"] + 1
+            )
+    elif "source" in result:
+        result = {**result, "source": dict(result["source"])}
+        while wire_bytes(result) > allowance and len(result["source"]["content"]) > 50:
+            src = result["source"]
+            src["content"] = src["content"][: len(src["content"]) // 2]
+            src["next_offset"] = src["offset"] + len(src["content"])
+            src["truncated"] = True
     elif "memory" in result:
         result = {**result, "memory": memory_view(result["memory"], min(chars, 800))}
         while wire_bytes(result) > allowance:
@@ -85,8 +98,8 @@ def source_page(source, offset, chars):
     text = source["content"]
     end = min(len(text), offset + chars)
     return {
-        k: source[k] for k in ("id", "revision", "role", "content_hash", "status")
-    } | {
+        "id": source["id"],
+        "role": source["role"],
         "content": text[offset:end],
         "offset": offset,
         "next_offset": end if end < len(text) else None,

@@ -126,7 +126,7 @@ export function installTools(ctx: Context, runtime: MemoryRuntime) {
     defineTool({
       name: MEMORY_TOOLS.taskState,
       description:
-        "Read the task bound to this session, its revision, constraints, acceptance criteria and next action. Task state survives window changes.",
+        "Read the task bound to this session, its revision, constraints, acceptance criteria and verification status. Task state survives window changes.",
       parameters: {},
       output,
       execute: (_args, exec) => call("task.read", {}, exec),
@@ -136,7 +136,7 @@ export function installTools(ctx: Context, runtime: MemoryRuntime) {
     defineTool({
       name: MEMORY_TOOLS.taskUpdate,
       description:
-        "Update current task progress with compare-and-swap. Re-read on revision conflict. Completion requires current acceptance evidence; user goals and constraints cannot be overwritten.",
+        "Update task milestone status, blockers, or supporting evidence with compare-and-swap. Do not call on routine steps; only call when status or blockers change. Completion requires current acceptance evidence; user goals and constraints cannot be overwritten.",
       parameters: {
         id: { type: "string", required: true, description: "Task ID" },
         expected_revision: {
@@ -148,7 +148,6 @@ export function installTools(ctx: Context, runtime: MemoryRuntime) {
           type: "string",
           description: "active, waiting, blocked, verifying, or completed",
         },
-        next_action: { type: "string", description: "Concrete next step" },
         blockers: {
           type: "array",
           items: { type: "string" },
@@ -173,22 +172,48 @@ export function installTools(ctx: Context, runtime: MemoryRuntime) {
   );
   ctx.tools.register(
     defineTool({
-      name: MEMORY_TOOLS.checkpoint,
+      name: MEMORY_TOOLS.transcript,
       description:
-        "Persist a versioned handoff checkpoint of current task state. First update next action, blockers and evidence.",
+        "Read earlier dialogue messages from a prior session bound to the same task (paginating backwards via before_sequence) or expand a folded tool/message source by source_id.",
       parameters: {
-        id: { type: "string", required: true, description: "Task ID" },
-        expected_revision: {
+        session_id: {
+          type: "string",
+          description:
+            "Optional peer session ID on the same task; defaults to the latest prior session",
+        },
+        before_sequence: {
           type: "integer",
-          required: true,
-          description: "Current task revision",
+          description:
+            "Sequence cursor to page backwards before (use next_before_sequence from previous page)",
+        },
+        limit: {
+          type: "integer",
+          description: "Number of messages to read (1 to 30, default 10)",
+        },
+        source_id: {
+          type: "string",
+          description:
+            "Optional source ID to expand a folded tool result or long message",
+        },
+        offset: {
+          type: "integer",
+          description:
+            "Character offset when expanding source_id (use next_offset for subsequent pages)",
         },
       },
       output,
       execute: (args, exec) =>
         call(
-          "task.checkpoint",
-          { id: args.id, expected_revision: args.expected_revision },
+          "transcript.read",
+          {
+            ...(args.session_id ? { session_id: args.session_id } : {}),
+            ...(args.before_sequence !== undefined
+              ? { before_sequence: args.before_sequence }
+              : {}),
+            ...(args.limit !== undefined ? { limit: args.limit } : {}),
+            ...(args.source_id ? { source_id: args.source_id } : {}),
+            ...(args.offset !== undefined ? { offset: args.offset } : {}),
+          },
           exec,
         ),
     }),

@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { readHostContext } from "../src/host-context.js";
 import { startVisiblePolling } from "../src/visible-polling.js";
 import { ensureCoreDaemon } from "../src/core-supervisor.js";
+import { MemoryRuntime } from "../src/runtime.js";
+import { createHash } from "node:crypto";
 
 describe("host context selection", () => {
   it("reads the captured route for each window and respects its output override", async () => {
@@ -137,5 +139,168 @@ describe("core supervisor auto-start", () => {
     } finally {
       fetchSpy.mockRestore();
     }
+  });
+});
+
+describe("turn-level preparation, static prefix lock, and tail recall", () => {
+  it("runs context.prepare once per user turn, skips tool-continuation steps, and hashes recall on replay", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mf-rt-"));
+    const credPath = join(dir, "credentials.json");
+    writeFileSync(
+      credPath,
+      JSON.stringify({
+        host_token: "h".repeat(48),
+        admin_token: "a".repeat(48),
+      }),
+    );
+    let preStepHandler: any;
+    let contextProvider: any;
+    const fakeCtx: any = {
+      workspaceRegistry: {
+        list: () => [{ id: "w1", title: "W1", path: "/w1", sessionIds: ["s1"] }],
+      },
+      sessions: { flush: async () => {} },
+      sessionPersistence: {
+        open: async () => ({
+          read: async () => ({ events: [] }),
+          close: async () => {},
+        }),
+      },
+      llm: {
+        resolveModelInfo: async () => ({
+          provider: "deepseek",
+          id: "deepseek-chat",
+          name: "deepseek-chat",
+          context: { contextWindow: 128000 },
+          defaultMaxTokens: 8192,
+        }),
+      },
+      systemPrompt: {
+        section: () => {},
+        context: (def: any) => {
+          contextProvider = def;
+        },
+      },
+      logger: { warn: vi.fn(), info: vi.fn() },
+      on: (event: string, fn: any) => {
+        if (event === "agent/pre-step") preStepHandler = fn;
+      },
+      effect: () => {},
+    };
+    const runtime = new MemoryRuntime(
+      fakeCtx,
+      "local",
+      "http://127.0.0.1:18765",
+      credPath,
+    );
+    const callSpy = vi
+      .spyOn(runtime.client, "call")
+      .mockImplementation(async (_channel, req: any) => {
+        if (req.operation === "workspace.upsert") return {};
+        if (req.operation === "session.upsert")
+          return {
+            id: "local:s1",
+            workspace_id: "local:w1",
+            task_id: "t1",
+            cursor: 0,
+          };
+        if (req.operation === "context.check")
+          return { safe: true, policy_revision: 1 };
+        if (req.operation === "context.sync") return {};
+        if (req.operation === "context.prepare")
+          return {
+            text: "<memory-framework-context>\nLOCKED_STATIC_CONTRACT\n</memory-framework-context>",
+            recall_text:
+              req.payload.query === "first"
+                ? "<memory-framework-recall>\n[memory:9] Incremental recall\n</memory-framework-recall>"
+                : "",
+            policy_revision: 1,
+            task: null,
+            safe: true,
+            context_chars: 16000,
+          };
+        if (req.operation === "context.inherit") return {};
+        return {};
+      });
+
+    runtime.install();
+    const agent: any = {
+      id: "s1",
+      session: { id: "s1", isOwnSeq: () => false },
+      options: { maxTokens: 4096 },
+    };
+    const signal = new AbortController().signal;
+
+    // Turn 1 Step 1 (user message present): runs prepare & appends tail recall
+    const turn1Messages: any[] = [
+      {
+        id: "m1",
+        role: "user",
+        source: { kind: "user" },
+        content: [{ type: "text", text: "first" }],
+      },
+    ];
+    const d1 = await preStepHandler(
+      {
+        agent,
+        modelSelection: { provider: "deepseek", model: "deepseek-chat" },
+        signal,
+      },
+      async () => ({ kind: "enter", messages: turn1Messages }),
+    );
+    expect(d1.messages).toHaveLength(2);
+    expect(d1.messages[1].source).toEqual({
+      kind: "memory-framework",
+      form: "recall",
+    });
+    expect(contextProvider.text({ agent })).toContain("LOCKED_STATIC_CONTRACT");
+
+    const callsAfterStep1 = callSpy.mock.calls.filter(
+      (c) => (c[1] as any).operation === "context.prepare",
+    ).length;
+    expect(callsAfterStep1).toBe(1);
+
+    // Turn 1 Step 2 (tool continuation: zero user messages): zero IPC calls & identical static prefix!
+    const d2 = await preStepHandler(
+      {
+        agent,
+        modelSelection: { provider: "deepseek", model: "deepseek-chat" },
+        signal,
+      },
+      async () => ({ kind: "enter", messages: [] }),
+    );
+    expect(d2.messages).toHaveLength(0);
+    expect(
+      callSpy.mock.calls.filter(
+        (c) => (c[1] as any).operation === "context.prepare",
+      ).length,
+    ).toBe(1);
+    expect(contextProvider.text({ agent })).toContain("LOCKED_STATIC_CONTRACT");
+
+    // Replay of tail recall message in forked session hashes content without [memory-receipt:N]
+    await runtime.ingest(
+      agent.session,
+      {
+        seq: 5,
+        type: "user/message",
+        data: d1.messages[1],
+      } as any,
+      signal,
+    );
+    const expectedHash = createHash("sha256")
+      .update(
+        "<memory-framework-recall>\n[memory:9] Incremental recall\n</memory-framework-recall>",
+        "utf8",
+      )
+      .digest("hex");
+    expect(callSpy).toHaveBeenCalledWith(
+      "host",
+      {
+        operation: "context.inherit",
+        session_id: "local:s1",
+        payload: { content_hash: expectedHash },
+      },
+      signal,
+    );
   });
 });

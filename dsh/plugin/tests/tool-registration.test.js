@@ -66,7 +66,7 @@ it.each([true, false])(
           "memory_framework_remember",
           "memory_framework_task_state",
           "memory_framework_task_update",
-          "memory_framework_checkpoint",
+          "memory_framework_transcript",
         ].sort(),
       );
       expect(await other.execute({ full: true }, {})).toBe(
@@ -115,6 +115,30 @@ it("dispatches namespaced reads through the same trusted model channel", async (
       "trusted Agent identity",
     );
     expect(call).toHaveBeenCalledTimes(1);
+
+    const taskUpdateDef = ctx.tools
+      .definitions()
+      .find((d) => d.name === "memory_framework_task_update");
+    expect(taskUpdateDef.parameters).not.toHaveProperty("next_action");
+
+    const transcript = ctx.tools.get("memory_framework_transcript");
+    await transcript.execute(
+      { session_id: "fixture:prev", before_sequence: 20, limit: 8 },
+      { agent, signal },
+    );
+    expect(call).toHaveBeenLastCalledWith(
+      "model",
+      {
+        operation: "transcript.read",
+        session_id: "fixture:current-window",
+        payload: {
+          session_id: "fixture:prev",
+          before_sequence: 20,
+          limit: 8,
+        },
+      },
+      signal,
+    );
   } finally {
     await ctx.fiber.dispose();
   }

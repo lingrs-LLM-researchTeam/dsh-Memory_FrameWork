@@ -50,19 +50,37 @@ def policy(e, **changes):
 def test_stable_snapshot_across_restart_and_real_changes(tmp_path):
     path = tmp_path / "db"
     e = setup(path)
-    ingest(e, "SQLite task constraint")
+    e.execute(
+        "memory.create",
+        {"content": "SQLite task constraint", "pinned": True},
+        "s",
+        "admin",
+    )
     a = e.execute("context.prepare", {"query": "SQLite"}, "s", "host")
     b = e.execute("context.prepare", {"query": "SQLite"}, "s", "host")
     assert a["text"] == b["text"]
+    assert "[memory-receipt:" not in a["text"]
     e.close()
     e = Engine(path)
     assert (
         e.execute("context.prepare", {"query": "SQLite"}, "s", "host")["text"]
         == a["text"]
     )
+    # Metadata-only edits (importance/revision) must NOT bust the static prompt cache.
     e.execute(
         "memory.update",
         {"id": 1, "expected_revision": 1, "importance": 0.9},
+        "s",
+        "admin",
+    )
+    assert (
+        e.execute("context.prepare", {"query": "SQLite"}, "s", "host")["text"]
+        == a["text"]
+    )
+    # Adding a new pinned constraint updates the static snapshot, while replacing an already-seen claim fences the old window.
+    e.execute(
+        "memory.create",
+        {"content": "SQLite WAL task constraint", "pinned": True},
         "s",
         "admin",
     )
@@ -86,6 +104,7 @@ def test_metadata_edits_and_restart_do_not_reembed(tmp_path, monkeypatch):
 
     with patch.object(Embeddings, "embed", embed):
         e = setup(tmp_path / "db")
+        policy(e, user_memory_mode="all")
         ingest(e, "original")
         assert e.index_pending()["indexed"] == 1
         e.execute(
@@ -135,7 +154,8 @@ def test_tool_output_is_evidence_only_until_explicit_promotion(tmp_path):
 
 def test_source_paging_total_budget_and_host_only_turn_reset(tmp_path):
     e = setup(tmp_path / "db")
-    ingest(e, "中文" * 100000)
+    src = ingest(e, "中文" * 100000)
+    e.execute("source.promote", {"id": src["id"]}, "s", "admin")
     policy(
         e,
         evidence_bytes=12000,
@@ -168,7 +188,8 @@ def test_source_paging_total_budget_and_host_only_turn_reset(tmp_path):
 
 def test_parallel_calls_cannot_overspend(tmp_path):
     e = setup(tmp_path / "db")
-    ingest(e, "test evidence")
+    src = ingest(e, "test evidence")
+    e.execute("source.promote", {"id": src["id"]}, "s", "admin")
     policy(e, max_tool_calls=2)
 
     def read(_):
@@ -196,8 +217,8 @@ def test_query_cache_and_daily_quota_survive_restart(tmp_path, monkeypatch):
 
     with patch.object(Embeddings, "embed", embed):
         e = setup(tmp_path / "db")
+        policy(e, embedding_daily_chars=1000, user_memory_mode="all")
         ingest(e, "a" * 600)
-        policy(e, embedding_daily_chars=1000)
         assert e.index_pending()["indexed"] == 1
         for _ in range(2):
             e.execute("ranking.preview", {"query": "query"}, "s", "admin")
@@ -223,8 +244,8 @@ def test_paused_workspace_does_not_starve_other_workspaces(tmp_path, monkeypatch
     monkeypatch.setenv("MEMORY_EMBEDDING_URL", "https://audit.invalid/embeddings")
     monkeypatch.setenv("MEMORY_EMBEDDING_MODEL", "fake")
     e = setup(tmp_path / "db")
+    policy(e, indexing_paused=True, user_memory_mode="all")
     ingest(e, "paused")
-    policy(e, indexing_paused=True)
     e.execute(
         "workspace.upsert",
         {"id": "other", "name": "other", "path": "/other", "instance_id": "test"},
@@ -240,7 +261,7 @@ def test_paused_workspace_does_not_starve_other_workspaces(tmp_path, monkeypatch
 
 def test_schema_upgrade_and_policy_conflict(tmp_path):
     e = setup(tmp_path / "db")
-    ingest(e, "old source")
+    e.execute("memory.create", {"content": "old source"}, "s", "admin")
     with e.db.transaction() as db:
         db.execute("ALTER TABLE memories DROP COLUMN vector_enabled")
         db.execute("UPDATE meta SET value=1 WHERE key='schema'")
@@ -272,13 +293,18 @@ def test_large_write_returns_ack_instead_of_ambiguous_budget_error(tmp_path):
     )
     assert result["action_applied"] and result["id"]
     assert len(json.dumps(result, ensure_ascii=False).encode()) < 4000
-    assert len(e.execute("snapshot", channel="admin")["memories"]) == 2
+    assert len(e.execute("snapshot", channel="admin")["memories"]) == 1
     e.close()
 
 
 def test_tool_dedup_preserves_user_repetitions_and_new_task_evidence(tmp_path):
     e = setup(tmp_path / "db")
-    policy(e, tool_memory_mode="all")
+    # Default user_memory_mode is evidence_only so live user messages do not self-echo as memories.
+    user_src = ingest(e, "default evidence only", "user", "0")
+    snap = e.execute("snapshot", channel="admin")
+    assert snap["memories"] == []
+    assert any(c["id"] == user_src["id"] for c in snap["source_candidates"])
+    policy(e, tool_memory_mode="all", user_memory_mode="all")
     ingest(e, "same observation", "tool", "1")
     ingest(e, "same observation", "user", "2")
     task = e.execute(
@@ -303,5 +329,5 @@ def test_tool_dedup_preserves_user_repetitions_and_new_task_evidence(tmp_path):
     assert len(memories) == 3
     assert any(m["task_id"] == task["id"] for m in memories)
     with e.db.transaction() as db:
-        assert db.execute("SELECT COUNT(*) FROM sources").fetchone()[0] == 4
+        assert db.execute("SELECT COUNT(*) FROM sources").fetchone()[0] == 5
     e.close()

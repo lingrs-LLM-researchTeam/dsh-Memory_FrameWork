@@ -5,15 +5,16 @@ description: Operational guide and token-efficient workflows for the DeepSeek Ha
 
 # DSH Memory Framework Workflow Skill
 
-Use this skill to operate the `dsh-memory-framework` tools (`memory_framework_search`, `memory_framework_read`, `memory_framework_remember`, `memory_framework_task_state`, `memory_framework_task_update`, `memory_framework_checkpoint`) accurately while minimizing token overhead and preserving per-turn evidence budgets.
+Use this skill to operate the `dsh-memory-framework` tools (`memory_framework_search`, `memory_framework_read`, `memory_framework_remember`, `memory_framework_task_state`, `memory_framework_task_update`, `memory_framework_transcript`) accurately while preserving KV-cache locality and per-turn evidence budgets.
 
 Other plugins may expose `memory_read` or similar names for separate stores. Never use their IDs with Memory Framework. Old conversation calls must use the current namespaced tools above; no generic-name aliases are registered.
 
-## 1. Zero-Redundancy Context Rule (Save Per-Turn Quota)
+## 1. Zero-Redundancy Context & Transcript Handoff Rule
 
-Before calling any `memory_framework_*` tool, inspect the `<memory-framework-context>` block already injected in the current turn:
-- **Do not call `memory_framework_task_state`** if the injected `Task:` section already shows the current `id`, `revision`, `goal`, `constraints`, `acceptance`, and `next_action`, unless a `revision_conflict` occurred during this turn.
-- **Do not call `memory_framework_search`** for facts already present in the injected `Memories:` section unless you need additional `source_ids` or deeper context not shown in the summary.
+Before calling any `memory_framework_*` tool, inspect the locked `<memory-framework-context>` block and any tail `<memory-framework-recall>` blocks already present in the conversation:
+- **Static prefix**: `<memory-framework-context>` locks the task contract (`id`, `title`, `goal`, `constraints`, `acceptance`), pinned rules, and—when continuing a task in a fresh window—the prior session's tail dialogue.
+- **Backward pagination (`memory_framework_transcript`)**: If the mounted handoff tail is not enough to reconstruct earlier context, call `memory_framework_transcript(before_sequence=..., limit=...)` to page backwards through the prior session's messages, or pass `source_id` to expand a folded tool result.
+- **Do not call `memory_framework_search`** for facts already present in `<memory-framework-context>` or `<memory-framework-recall>` unless you need additional `source_ids` or deeper context.
 - Every tool call—**including failed attempts**—consumes the per-turn quota (default: `12` tool calls, `3` writes, and the workspace's `evidence_bytes` budget).
 
 ## 2. Proposing Grounded Memories (`memory_framework_remember`)
@@ -49,16 +50,15 @@ Before calling any `memory_framework_*` tool, inspect the `<memory-framework-con
 
 Tasks persist across DSH windows and use optimistic concurrency control (`expected_revision`).
 
-### Updating Progress (`memory_framework_task_update`)
-- **Batch your writes**: Because each turn allows at most `3` write operations by default, combine `status`, `next_action`, `blockers`, and `evidence_ids` into a **single** `memory_framework_task_update` call at the end of a milestone rather than updating after every micro-step.
+### Updating Milestones (`memory_framework_task_update`)
+- **Only update on milestone changes**: Do NOT call `memory_framework_task_update` for routine step-by-step progress. Only call it when `status` (`active`, `waiting`, `blocked`, `verifying`, `completed`), `blockers`, or milestone `evidence_ids` actually change. First read the current `revision` via `memory_framework_task_state` if you do not yet know it in this session.
 - **Handling `revision_conflict`**: If another window updated the task concurrently, call `memory_framework_task_state` once to read the new `revision` and latest fields, merge your progress, and submit a single retry with the updated `expected_revision`.
 - **Handling `verification_required` (Completion Gate)**:
   - The model **cannot** set `status: "completed"` while any item in `acceptance` is unverified (`verification[criterion]` is empty).
   - Human verification (`task.verify`) is an owner-only Dashboard action.
   - When all implementation work is done and ready for acceptance:
-    1. Call `memory_framework_task_update` with `status: "verifying"`, `next_action: "等待在 Memory Dashboard 完成人工验收"`, and `evidence_ids` pointing to the supporting source IDs.
-    2. Call `memory_framework_checkpoint` with the returned `revision` to save a clean handoff snapshot.
-    3. Instruct the user to verify the acceptance criteria in the right-hand **Memory Framework · 记忆与任务 → 任务与工作区** panel.
+    1. Call `memory_framework_task_update` with `status: "verifying"` and `evidence_ids` pointing to the supporting source IDs.
+    2. Instruct the user to verify the acceptance criteria in the right-hand **Memory Framework · 记忆与任务 → 任务与工作区** panel.
 
 ## 4. Boundary Between Model Tools and Owner Dashboard
 

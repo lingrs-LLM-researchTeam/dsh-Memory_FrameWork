@@ -625,8 +625,6 @@ export function Dashboard({
                               • {c}
                             </p>
                           ))}
-                          <h3>下一步</h3>
-                          <p>{t.next_action || "尚未指定下一动作"}</p>
                           {t.blockers.length > 0 && (
                             <div className="mf-notice warning">
                               阻塞：{t.blockers.join("；")}
@@ -674,19 +672,7 @@ export function Dashboard({
                               .catch((e) => setError(String(e)))
                           }
                         >
-                          历史与检查点
-                        </button>
-                        <button
-                          className="mf-btn"
-                          disabled={busy}
-                          onClick={() =>
-                            run("task.checkpoint", {
-                              id: t.id,
-                              expected_revision: t.revision,
-                            })
-                          }
-                        >
-                          保存检查点
+                          变更历史
                         </button>
                         <button
                           className="mf-btn primary"
@@ -1304,7 +1290,6 @@ function TaskEditor({
   const [acceptance, setAcceptance] = useState(
     old?.acceptance.join("\n") || "",
   );
-  const [next, setNext] = useState(old?.next_action || "");
   const [blockers, setBlockers] = useState(old?.blockers.join("\n") || "");
   const [status, setStatus] = useState(old?.status || "planned");
   const [error, setError] = useState("");
@@ -1318,7 +1303,6 @@ function TaskEditor({
               ? {
                   id: old.id,
                   expected_revision: old.revision,
-                  next_action: next,
                   blockers: lines(blockers),
                   status,
                 }
@@ -1371,14 +1355,6 @@ function TaskEditor({
         </div>
         {old && (
           <>
-            <label className="mf-label">
-              <strong>下一步</strong>
-              <input
-                aria-label="下一步"
-                value={next}
-                onChange={(e) => setNext(e.target.value)}
-              />
-            </label>
             <label className="mf-label">
               <strong>阻塞项 · 每行一项</strong>
               <textarea

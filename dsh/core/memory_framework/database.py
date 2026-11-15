@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS task_events(id INTEGER PRIMARY KEY AUTOINCREMENT,task
 CREATE TABLE IF NOT EXISTS profiles(workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id),revision INTEGER NOT NULL,weights TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS profile_history(workspace_id TEXT NOT NULL,revision INTEGER NOT NULL,weights TEXT NOT NULL,created_at REAL NOT NULL,PRIMARY KEY(workspace_id,revision));
 CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,object_type TEXT NOT NULL,object_id TEXT NOT NULL,revision INTEGER NOT NULL,workspace_id TEXT NOT NULL,session_id TEXT,task_id TEXT,broadcast INTEGER NOT NULL,created_at REAL NOT NULL);
-CREATE TABLE IF NOT EXISTS injections(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,policy INTEGER NOT NULL,task_id TEXT,task_revision INTEGER,memories TEXT NOT NULL,sources TEXT NOT NULL,created_at REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS injections(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,policy INTEGER NOT NULL,task_id TEXT,task_revision INTEGER,memories TEXT NOT NULL,sources TEXT NOT NULL,created_at REAL NOT NULL,content_hash TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS pending_inputs(session_id TEXT NOT NULL,message_id TEXT NOT NULL,message TEXT NOT NULL,status TEXT NOT NULL,created_at REAL NOT NULL,PRIMARY KEY(session_id,message_id));
 CREATE TABLE IF NOT EXISTS tool_calls(session_id TEXT NOT NULL,call_id TEXT NOT NULL,name TEXT NOT NULL,PRIMARY KEY(session_id,call_id));
 CREATE TABLE IF NOT EXISTS inherited_receipts(session_id TEXT NOT NULL,receipt_id INTEGER NOT NULL,PRIMARY KEY(session_id,receipt_id));
@@ -34,10 +34,13 @@ CREATE TABLE IF NOT EXISTS applied_corrections(session_id TEXT NOT NULL,event_id
 CREATE TABLE IF NOT EXISTS goal_projections(session_id TEXT PRIMARY KEY,goal_id TEXT NOT NULL,task_id TEXT NOT NULL,objective TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_memory_scope ON memories(workspace_id,status);
 CREATE INDEX IF NOT EXISTS idx_source_session ON sources(session_id,sequence);
+CREATE INDEX IF NOT EXISTS idx_source_task ON sources(workspace_id,task_id,session_id,sequence);
 CREATE INDEX IF NOT EXISTS idx_events_workspace ON events(workspace_id,id);
 CREATE TABLE IF NOT EXISTS workspace_policies(workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id),revision INTEGER NOT NULL,settings TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS evidence_usage(session_id TEXT PRIMARY KEY,turn_sequence INTEGER NOT NULL DEFAULT -1,used_bytes INTEGER NOT NULL DEFAULT 0,tool_calls INTEGER NOT NULL DEFAULT 0,writes INTEGER NOT NULL DEFAULT 0,context_signature TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS context_snapshots(session_id TEXT PRIMARY KEY,signature TEXT NOT NULL,text TEXT NOT NULL,receipt_id INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS session_static_contexts(session_id TEXT PRIMARY KEY REFERENCES sessions(id),task_id TEXT,signature TEXT NOT NULL,text TEXT NOT NULL,handoff_text TEXT NOT NULL DEFAULT '',handoff_sources TEXT NOT NULL DEFAULT '[]',created_at REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS session_exposed_memories(session_id TEXT NOT NULL REFERENCES sessions(id),memory_id INTEGER NOT NULL REFERENCES memories(id),canonical_hash TEXT NOT NULL,exposed_at REAL NOT NULL,PRIMARY KEY(session_id,memory_id));
 CREATE TABLE IF NOT EXISTS session_context(session_id TEXT PRIMARY KEY REFERENCES sessions(id),settings TEXT NOT NULL,observed_at REAL NOT NULL);
 INSERT OR IGNORE INTO meta VALUES('context_advice_ack',0);
 CREATE TABLE IF NOT EXISTS embedding_dimensions(config_key TEXT PRIMARY KEY,dimensions INTEGER NOT NULL);
@@ -77,7 +80,7 @@ class Database:
             version = self.connection.execute(
                 "SELECT value FROM meta WHERE key='schema'"
             ).fetchone()
-            if version and version[0] not in (1, 2, 3):
+            if version and version[0] not in (1, 2, 3, 4):
                 self.connection.close()
                 raise RuntimeError(
                     "Unsupported database schema; refusing to overwrite data"
@@ -86,17 +89,34 @@ class Database:
         version = self.connection.execute(
             "SELECT value FROM meta WHERE key='schema'"
         ).fetchone()[0]
-        if version not in (1, 2, 3):
+        if version not in (1, 2, 3, 4):
             raise RuntimeError(
                 "Unsupported database schema; refusing to overwrite data"
             )
         if version == 1:
             with self.transaction() as db:
-                db.execute(
-                    "ALTER TABLE memories ADD COLUMN vector_enabled INTEGER NOT NULL DEFAULT 1"
-                )
+                cols = {
+                    r["name"]
+                    for r in db.execute("PRAGMA table_info(memories)").fetchall()
+                }
+                if "vector_enabled" not in cols:
+                    db.execute(
+                        "ALTER TABLE memories ADD COLUMN vector_enabled INTEGER NOT NULL DEFAULT 1"
+                    )
                 db.execute("UPDATE meta SET value=2 WHERE key='schema'")
-        self.connection.execute("UPDATE meta SET value=3 WHERE key='schema'")
+        with self.transaction() as db:
+            inj_cols = {
+                r["name"]
+                for r in db.execute("PRAGMA table_info(injections)").fetchall()
+            }
+            if "content_hash" not in inj_cols:
+                db.execute(
+                    "ALTER TABLE injections ADD COLUMN content_hash TEXT NOT NULL DEFAULT ''"
+                )
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_injections_hash ON injections(content_hash)"
+            )
+            db.execute("UPDATE meta SET value=4 WHERE key='schema'")
 
     @contextmanager
     def transaction(self):

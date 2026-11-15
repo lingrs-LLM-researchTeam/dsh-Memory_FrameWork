@@ -27,11 +27,13 @@ try {
   for (const id of [a, b, outside]) await client.call('host', { operation: 'session.upsert', payload: { id, workspace_id: id === outside ? wid + '-private' : wid } });
   const task = await admin('task.create', { workspace_id: wid, title: 'Gateway smoke', goal: 'Verify two windows', acceptance: ['Verified externally'] });
   for (const id of [a,b]) await admin('session.bind', { session_id: id, task_id: task.id, expected_task_id: null });
-  await client.call('host', { operation: 'event.ingest', payload: { session_id: a, sequence: 1, event_id: 'event-1', role: 'user', content: 'Canonical SQLite constraint for integration' } });
+  const ingested = await client.call('host', { operation: 'event.ingest', payload: { session_id: a, sequence: 1, event_id: 'event-1', role: 'user', content: 'Canonical SQLite constraint for integration' } });
+  const promoted = await admin('source.promote', { id: ingested.id }, a);
+  await admin('memory.update', { id: promoted.id, expected_revision: 1, scope: 'task' }, a);
   const search = (sid) => client.call('model', { operation: 'memory.search', session_id: sid, payload: { query: 'Canonical SQLite' } });
-  assert((await search(b)).results.some(m => m.workspace_id === wid)); results.push('cross-session task memory');
-  assert(!(await search(outside)).results.some(m => m.workspace_id === wid)); results.push('workspace isolation');
-  const writes = await Promise.allSettled([a,b].map(sid => client.call('model', { operation: 'task.update', session_id: sid, payload: { id: task.id, expected_revision: 1, next_action: sid } })));
+  assert((await search(b)).results.length > 0); results.push('cross-session task memory');
+  assert((await search(outside)).results.length === 0); results.push('workspace isolation');
+  const writes = await Promise.allSettled([a,b].map(sid => client.call('model', { operation: 'task.update', session_id: sid, payload: { id: task.id, expected_revision: 1, blockers: [sid] } })));
   assert.equal(writes.filter(r => r.status === 'fulfilled').length, 1); results.push('concurrent revision conflict');
   const current = await client.call('model', { operation: 'task.read', session_id: b, payload: {} });
   await assert.rejects(client.call('model', { operation: 'task.update', session_id: b, payload: { id: task.id, expected_revision: current.revision, status: 'completed' } }), { code: 'verification_required' }); results.push('unsupported completion rejected');

@@ -5616,7 +5616,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			status: string(),
 			blockers: array(string()),
 			decisions: array(string()),
-			next_action: string(),
 			evidence_ids: array(string()),
 			verification: record(string(), object({
 				source_id: string(),
@@ -5632,6 +5631,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			max_tool_calls: number(),
 			max_writes: number(),
 			source_chars: number(),
+			user_memory_mode: _enum(["evidence_only", "all"]).default("evidence_only"),
 			tool_memory_mode: _enum([
 				"evidence_only",
 				"allowlist",
@@ -6053,26 +6053,43 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 									})]
 								}, key))
 							}),
-							(0, react_jsx_runtime.jsxs)("label", {
-								className: "mf-label",
-								children: ["工具输出自动收录", (0, react_jsx_runtime.jsxs)("select", {
-									"aria-label": "工具输出自动收录",
-									value: draft.tool_memory_mode,
-									onChange: (e) => change("tool_memory_mode", e.target.value),
-									children: [
-										(0, react_jsx_runtime.jsx)("option", {
+							(0, react_jsx_runtime.jsxs)("div", {
+								className: "mf-form-grid",
+								children: [(0, react_jsx_runtime.jsxs)("label", {
+									className: "mf-label",
+									children: ["用户发言自动收录", (0, react_jsx_runtime.jsxs)("select", {
+										"aria-label": "用户发言自动收录",
+										value: draft.user_memory_mode,
+										onChange: (e) => change("user_memory_mode", e.target.value),
+										children: [(0, react_jsx_runtime.jsx)("option", {
 											value: "evidence_only",
-											children: "仅保留原始证据，手动收录"
-										}),
-										(0, react_jsx_runtime.jsx)("option", {
-											value: "allowlist",
-											children: "只自动收录指定工具"
-										}),
-										(0, react_jsx_runtime.jsx)("option", {
+											children: "仅保留聊天记录与来源证据，按需收录（推荐，保护缓存）"
+										}), (0, react_jsx_runtime.jsx)("option", {
 											value: "all",
-											children: "自动收录符合长度限制的工具"
-										})
-									]
+											children: "每句发言自动生成记忆"
+										})]
+									})]
+								}), (0, react_jsx_runtime.jsxs)("label", {
+									className: "mf-label",
+									children: ["工具输出自动收录", (0, react_jsx_runtime.jsxs)("select", {
+										"aria-label": "工具输出自动收录",
+										value: draft.tool_memory_mode,
+										onChange: (e) => change("tool_memory_mode", e.target.value),
+										children: [
+											(0, react_jsx_runtime.jsx)("option", {
+												value: "evidence_only",
+												children: "仅保留原始证据，手动收录"
+											}),
+											(0, react_jsx_runtime.jsx)("option", {
+												value: "allowlist",
+												children: "只自动收录指定工具"
+											}),
+											(0, react_jsx_runtime.jsx)("option", {
+												value: "all",
+												children: "自动收录符合长度限制的工具"
+											})
+										]
+									})]
 								})]
 							}),
 							(0, react_jsx_runtime.jsxs)("label", {
@@ -6134,7 +6151,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}), (0, react_jsx_runtime.jsxs)("section", {
 				className: "mf-panel",
 				children: [
-					(0, react_jsx_runtime.jsx)("h2", { children: "待收录工具证据" }),
+					(0, react_jsx_runtime.jsx)("h2", { children: "待收录对话与工具证据" }),
 					snapshot.source_candidates.filter((s) => s.workspace_id === current.workspace_id).slice(0, candidateLimit).map((s) => (0, react_jsx_runtime.jsxs)("article", {
 						className: "mf-panel",
 						children: [
@@ -6874,8 +6891,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 															className: "mf-muted",
 															children: ["• ", c]
 														}, i)),
-														(0, react_jsx_runtime.jsx)("h3", { children: "下一步" }),
-														(0, react_jsx_runtime.jsx)("p", { children: t.next_action || "尚未指定下一动作" }),
 														t.blockers.length > 0 && (0, react_jsx_runtime.jsxs)("div", {
 															className: "mf-notice warning",
 															children: ["阻塞：", t.blockers.join("；")]
@@ -6905,16 +6920,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 														(0, react_jsx_runtime.jsx)("button", {
 															className: "mf-btn ghost",
 															onClick: () => void call("task.history", { id: t.id }, sessionId).then(setDetail).catch((e) => setError(String(e))),
-															children: "历史与检查点"
-														}),
-														(0, react_jsx_runtime.jsx)("button", {
-															className: "mf-btn",
-															disabled: busy,
-															onClick: () => run("task.checkpoint", {
-																id: t.id,
-																expected_revision: t.revision
-															}),
-															children: "保存检查点"
+															children: "变更历史"
 														}),
 														(0, react_jsx_runtime.jsx)("button", {
 															className: "mf-btn primary",
@@ -7324,7 +7330,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			const [goal, setGoal] = (0, react.useState)(old?.goal || "");
 			const [constraints, setConstraints] = (0, react.useState)(old?.constraints.join("\n") || "");
 			const [acceptance, setAcceptance] = (0, react.useState)(old?.acceptance.join("\n") || "");
-			const [next, setNext] = (0, react.useState)(old?.next_action || "");
 			const [blockers, setBlockers] = (0, react.useState)(old?.blockers.join("\n") || "");
 			const [status, setStatus] = (0, react.useState)(old?.status || "planned");
 			const [error, setError] = (0, react.useState)("");
@@ -7338,7 +7343,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 							...old ? {
 								id: old.id,
 								expected_revision: old.revision,
-								next_action: next,
 								blockers: lines(blockers),
 								status
 							} : {},
@@ -7391,44 +7395,33 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 								})]
 							})]
 						}),
-						old && (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
-							(0, react_jsx_runtime.jsxs)("label", {
-								className: "mf-label",
-								children: [(0, react_jsx_runtime.jsx)("strong", { children: "下一步" }), (0, react_jsx_runtime.jsx)("input", {
-									"aria-label": "下一步",
-									value: next,
-									onChange: (e) => setNext(e.target.value)
-								})]
-							}),
-							(0, react_jsx_runtime.jsxs)("label", {
-								className: "mf-label",
-								children: [(0, react_jsx_runtime.jsx)("strong", { children: "阻塞项 · 每行一项" }), (0, react_jsx_runtime.jsx)("textarea", {
-									value: blockers,
-									onChange: (e) => setBlockers(e.target.value),
-									"aria-label": "阻塞项"
-								})]
-							}),
-							(0, react_jsx_runtime.jsxs)("label", {
-								className: "mf-label",
-								children: [(0, react_jsx_runtime.jsx)("strong", { children: "任务状态" }), (0, react_jsx_runtime.jsx)("select", {
-									"aria-label": "任务状态",
-									value: status,
-									onChange: (e) => setStatus(e.target.value),
-									children: [
-										"planned",
-										"active",
-										"waiting",
-										"blocked",
-										"verifying",
-										"completed",
-										"cancelled"
-									].map((s) => (0, react_jsx_runtime.jsx)("option", {
-										value: s,
-										children: statusLabels[s]
-									}, s))
-								})]
-							})
-						] }),
+						old && (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [(0, react_jsx_runtime.jsxs)("label", {
+							className: "mf-label",
+							children: [(0, react_jsx_runtime.jsx)("strong", { children: "阻塞项 · 每行一项" }), (0, react_jsx_runtime.jsx)("textarea", {
+								value: blockers,
+								onChange: (e) => setBlockers(e.target.value),
+								"aria-label": "阻塞项"
+							})]
+						}), (0, react_jsx_runtime.jsxs)("label", {
+							className: "mf-label",
+							children: [(0, react_jsx_runtime.jsx)("strong", { children: "任务状态" }), (0, react_jsx_runtime.jsx)("select", {
+								"aria-label": "任务状态",
+								value: status,
+								onChange: (e) => setStatus(e.target.value),
+								children: [
+									"planned",
+									"active",
+									"waiting",
+									"blocked",
+									"verifying",
+									"completed",
+									"cancelled"
+								].map((s) => (0, react_jsx_runtime.jsx)("option", {
+									value: s,
+									children: statusLabels[s]
+								}, s))
+							})]
+						})] }),
 						(0, react_jsx_runtime.jsx)("button", {
 							className: "mf-btn primary",
 							disabled: busy,

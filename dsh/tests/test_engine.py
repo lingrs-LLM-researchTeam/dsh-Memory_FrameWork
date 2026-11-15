@@ -1,8 +1,9 @@
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from memory_framework.engine import Engine, DomainError
+from memory_framework.engine import Engine, DomainError, sha256_text
 from memory_framework.models import Weights
+from memory_framework_shared.identity import fingerprint
 
 
 @pytest.fixture
@@ -74,6 +75,28 @@ def test_scope_and_scope_changes_are_authoritative(engine):
 def test_task_handoff_and_restart(engine, tmp_path):
     t = task(engine)
     bind(engine, "a1", t["id"])
+    engine.execute(
+        "event.ingest",
+        {
+            "session_id": "a1",
+            "event_id": "h1",
+            "sequence": 1,
+            "role": "user",
+            "content": "先把迁移脚本跑通，然后运行集成测试",
+        },
+        channel="host",
+    )
+    engine.execute(
+        "event.ingest",
+        {
+            "session_id": "a1",
+            "event_id": "h2",
+            "sequence": 2,
+            "role": "assistant",
+            "content": "迁移脚本已完成，准备运行集成测试。",
+        },
+        channel="host",
+    )
     bind(engine, "a2", t["id"])
     memory(engine, scope="task")
     updated = engine.execute(
@@ -81,7 +104,6 @@ def test_task_handoff_and_restart(engine, tmp_path):
         {
             "id": t["id"],
             "expected_revision": 1,
-            "next_action": "运行集成测试",
             "status": "active",
         },
         "a1",
@@ -92,6 +114,7 @@ def test_task_handoff_and_restart(engine, tmp_path):
         context = other.execute("context.prepare", {"query": "SQLite"}, "a2", "host")
         assert "运行集成测试" in context["text"]
         assert "不泄漏工作区记忆" in context["text"]
+        assert "SQLite" in context["recall_text"]
         assert context["memory_ids"]
     finally:
         other.close()
@@ -106,7 +129,7 @@ def test_compare_and_swap_prevents_lost_updates(engine):
         try:
             return engine.execute(
                 "task.update",
-                {"id": t["id"], "expected_revision": 1, "next_action": sid},
+                {"id": t["id"], "expected_revision": 1, "blockers": [sid]},
                 sid,
             )
         except DomainError as exc:
@@ -301,10 +324,11 @@ def test_weight_versions_and_preview_do_not_mutate_profile(engine):
     weights.update(task=0.1, relevance=0.45)
     preview = admin(engine, "ranking.preview", {"query": "SQLite", "weights": weights})
     assert preview["weights"]["relevance"] == 0.45
+    search_res = engine.execute("memory.search", {"query": "SQLite"}, "a1")
+    assert "weights" not in search_res
+    assert "memory_receipt" not in search_res
     assert (
-        engine.execute("memory.search", {"query": "SQLite"}, "a1")["weights"][
-            "relevance"
-        ]
+        admin(engine, "ranking.preview", {"query": "SQLite"})["weights"]["relevance"]
         == 0.25
     )
     assert (
@@ -380,8 +404,9 @@ def test_faiss_route_uses_only_eligible_embeddings(engine):
 def test_tool_reads_and_forked_receipts_preserve_revocation(engine):
     m = memory(engine, scope="workspace")
     result = engine.execute("memory.read", {"id": m["id"]}, "a1")
+    assert "memory_receipt" not in result
     engine.execute(
-        "context.inherit", {"receipt_id": result["memory_receipt"]}, "a2", "host"
+        "context.inherit", {"content_hash": fingerprint(result)}, "a2", "host"
     )
     assert engine.execute("context.check", {}, "a2", "host")["safe"]
     admin(engine, "source.revoke", {"id": m["source_ids"][0], "expected_revision": 1})
@@ -391,10 +416,12 @@ def test_tool_reads_and_forked_receipts_preserve_revocation(engine):
 
 def test_fork_receipt_cannot_cross_scope_or_unknown_provenance(engine):
     m = memory(engine)
-    receipt = engine.execute("memory.read", {"id": m["id"]}, "a1")["memory_receipt"]
-    engine.execute("context.inherit", {"receipt_id": receipt}, "a2", "host")
+    result = engine.execute("memory.read", {"id": m["id"]}, "a1")
+    engine.execute(
+        "context.inherit", {"content_hash": fingerprint(result)}, "a2", "host"
+    )
     assert not engine.execute("context.check", {}, "a2", "host")["safe"]
-    engine.execute("context.inherit", {"receipt_id": -1}, "b1", "host")
+    engine.execute("context.inherit", {"content_hash": "deadbeef"}, "b1", "host")
     assert not engine.execute("context.check", {}, "b1", "host")["safe"]
 
 
@@ -516,7 +543,8 @@ def test_conflicting_claims_keep_both_sources_without_private_id_leak(engine):
         {"id": c1["id"], "expected_revision": 1, "scope": "workspace"},
     )
     read = engine.execute("memory.read", {"id": c1["id"]}, "a2")["memory"]
-    assert read["conflicts_with"] == []
+    assert read.get("conflicts_with", []) == []
+    assert "conflicts_with" not in read
 
 
 def test_progress_edit_does_not_invalidate_unchanged_acceptance(engine):
@@ -541,7 +569,7 @@ def test_progress_edit_does_not_invalidate_unchanged_acceptance(engine):
             "goal": t["goal"],
             "acceptance": t["acceptance"],
             "constraints": t["constraints"],
-            "next_action": "report",
+            "blockers": ["report"],
         },
     )
     assert t["verification"]
@@ -572,3 +600,187 @@ def test_expired_structured_claim_is_not_returned_as_current_fact(engine):
     ]
     with pytest.raises(DomainError):
         engine.execute("memory.read", {"id": c["id"]}, "a1")
+
+
+def test_dehydrated_context_and_multi_turn_static_prefix_invariance(engine):
+    t = task(engine)
+    bind(engine, "a1", t["id"])
+    bind(engine, "a2", t["id"])
+    pinned = memory(engine, "全局红线：禁止修改数据库表名", scope="task", pinned=True)
+    dynamic_one = memory(engine, "SQLite WAL 并发配置说明", scope="task")
+
+    turn1 = engine.execute("context.prepare", {"query": "SQLite WAL"}, "a2", "host")
+    # 1. Dehydration checks: zero noisy receipts, timestamps, revisions, or unverified boilerplate
+    for noisy in (
+        "[memory-receipt:",
+        "updated_at",
+        "created_at",
+        "workspace_id",
+        "evidence:quoted_source_not_verified",
+        "conflicts:[]",
+        " r1 ",
+    ):
+        assert noisy not in turn1["text"]
+        assert noisy not in turn1["recall_text"]
+
+    assert pinned["content"] in turn1["text"]
+    assert dynamic_one["content"] not in turn1["text"]
+    assert dynamic_one["content"] in turn1["recall_text"]
+
+    # 2. Task status/blockers updates & new cross-session memories must NOT mutate locked static prefix
+    engine.execute("turn.begin", {"sequence": 2}, "a2", "host")
+    engine.execute(
+        "task.update",
+        {"id": t["id"], "expected_revision": 1, "status": "waiting", "blockers": ["CI"]},
+        "a2",
+    )
+    dynamic_two = memory(engine, "SQLite 备份恢复流程", scope="task")
+    turn2 = engine.execute("context.prepare", {"query": "SQLite 备份"}, "a2", "host")
+    assert turn2["text"] == turn1["text"]
+    # Previously exposed dynamic_one is deduplicated; only unseen dynamic_two is tail-recalled
+    assert dynamic_one["content"] not in turn2["recall_text"]
+    assert dynamic_two["content"] in turn2["recall_text"]
+
+    # 3. Repeating the same query yields empty recall_text (zero duplicate injection)
+    engine.execute("turn.begin", {"sequence": 3}, "a2", "host")
+    turn3 = engine.execute("context.prepare", {"query": "SQLite 备份"}, "a2", "host")
+    assert turn3["text"] == turn1["text"]
+    assert turn3["recall_text"] == ""
+
+    # 4. Fork inheritance via SHA-256 of tail recall_text preserves revocation safety
+    engine.execute("session.upsert", {"id": "a3", "workspace_id": "a"}, channel="host")
+    bind(engine, "a3", t["id"])
+    engine.execute(
+        "context.inherit",
+        {"content_hash": sha256_text(turn1["recall_text"])},
+        "a3",
+        "host",
+    )
+    assert engine.execute("context.check", {}, "a3", "host")["safe"]
+    admin(
+        engine,
+        "source.revoke",
+        {"id": dynamic_one["source_ids"][0], "expected_revision": 1},
+    )
+    assert not engine.execute("context.check", {}, "a2", "host")["safe"]
+    assert not engine.execute("context.check", {}, "a3", "host")["safe"]
+
+
+def test_self_echo_suppression_even_when_user_memory_mode_all(engine):
+    old_policy = admin(engine, "snapshot")["policies"][0]
+    admin(
+        engine,
+        "policy.save",
+        {
+            "workspace_id": old_policy["workspace_id"],
+            "expected_revision": old_policy["revision"],
+            "settings": {**old_policy["settings"], "user_memory_mode": "all"},
+        },
+    )
+    engine.execute(
+        "event.ingest",
+        {
+            "session_id": "a1",
+            "event_id": "u1",
+            "sequence": 1,
+            "role": "user",
+            "content": "本窗口刚刚发出的独特原话鲲鹏展翅",
+        },
+        channel="host",
+    )
+    # Same-session prepare & search must never echo live conversation back to itself
+    prepared = engine.execute("context.prepare", {"query": "鲲鹏展翅"}, "a1", "host")
+    assert prepared["recall_text"] == ""
+    assert engine.execute("memory.search", {"query": "鲲鹏展翅"}, "a1")["results"] == []
+
+
+def test_handoff_tail_and_backward_transcript_tool(engine):
+    t = task(engine)
+    bind(engine, "a1", t["id"])
+    # Create 10 messages in a1: early history, a revoked proposal, and a large tool output
+    for seq in range(1, 9):
+        engine.execute(
+            "event.ingest",
+            {
+                "session_id": "a1",
+                "event_id": f"ev-{seq}",
+                "sequence": seq,
+                "role": "user" if seq % 2 == 1 else "assistant",
+                "content": f"第{seq}条对话消息内容",
+            },
+            channel="host",
+        )
+    revoked_src = engine.execute(
+        "event.ingest",
+        {
+            "session_id": "a1",
+            "event_id": "ev-9",
+            "sequence": 9,
+            "role": "assistant",
+            "content": "错误提议：直接删库重建",
+        },
+        channel="host",
+    )
+    admin(engine, "source.revoke", {"id": revoked_src["id"], "expected_revision": 1})
+    engine.execute(
+        "event.tool_call", {"call_id": "tc-10", "name": "pytest_runner"}, "a1", "host"
+    )
+    long_tool = engine.execute(
+        "event.ingest",
+        {
+            "session_id": "a1",
+            "event_id": "ev-10",
+            "sequence": 10,
+            "role": "tool",
+            "content": "PASS " * 200,
+            "metadata": {"tool_call_id": "tc-10"},
+        },
+        channel="host",
+    )
+
+    # Bind clean handoff session a2
+    bind(engine, "a2", t["id"])
+    ctx = engine.execute("context.prepare", {"query": ""}, "a2", "host")
+    assert ctx["safe"]
+    # Revoked content is masked, not leaked, and does NOT fence a2
+    assert "直接删库重建" not in ctx["text"]
+    assert "已被否决并剔除" in ctx["text"]
+    # Long tool output is folded in the tail preview with its source_id
+    assert long_tool["id"] in ctx["text"]
+    assert "memory_framework_transcript" in ctx["text"]
+    # Early message seq 1 is outside the 8-message tail window
+    assert "第1条对话消息内容" not in ctx["text"]
+    assert "第8条对话消息内容" in ctx["text"]
+
+    # Model uses transcript.read to paginate backwards into earlier messages
+    page1 = engine.execute("transcript.read", {"limit": 5}, "a2")
+    assert page1["session_id"] == "a1"
+    assert page1["has_more"] is True
+    assert page1["entries"][-1]["source_id"] == long_tool["id"]
+    assert page1["entries"][-1]["truncated"] is True
+
+    page2 = engine.execute(
+        "transcript.read",
+        {"session_id": "a1", "before_sequence": page1["next_before_sequence"], "limit": 6},
+        "a2",
+    )
+    assert any("第1条对话消息内容" in e["content"] for e in page2["entries"])
+
+    # Model can expand the folded tool output via source_id
+    expanded = engine.execute(
+        "transcript.read", {"source_id": long_tool["id"], "offset": 0}, "a2"
+    )
+    assert expanded["source"]["id"] == long_tool["id"]
+    assert expanded["source"]["content"].startswith("PASS PASS")
+
+    # Unauthorized session in another workspace cannot read a1's transcript or source
+    with pytest.raises(DomainError) as ex1:
+        engine.execute("transcript.read", {"session_id": "a1"}, "b1")
+    assert ex1.value.code == "forbidden"
+    with pytest.raises(DomainError) as ex2:
+        engine.execute("transcript.read", {"source_id": long_tool["id"]}, "b1")
+    assert ex2.value.code == "forbidden"
+    # Model channel can no longer invoke legacy task.checkpoint
+    with pytest.raises(DomainError) as ex3:
+        engine.execute("task.checkpoint", {"id": t["id"], "expected_revision": 1}, "a2")
+    assert ex3.value.code == "forbidden"

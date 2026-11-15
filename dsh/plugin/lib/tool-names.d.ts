@@ -5,5 +5,5 @@ export declare const MEMORY_TOOLS: {
     readonly remember: "memory_framework_remember";
     readonly taskState: "memory_framework_task_state";
     readonly taskUpdate: "memory_framework_task_update";
-    readonly checkpoint: "memory_framework_checkpoint";
+    readonly transcript: "memory_framework_transcript";
 };

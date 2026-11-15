@@ -619,20 +619,85 @@ class Engine:
         )
         return cursor.lastrowid
 
-    def _inherit_row(self, db, sid, row):
+    def _prune_exposed_memories(self, db, sid):
+        still_exposed = {
+            (mem["id"], mem["hash"])
+            for r in db.execute(
+                "SELECT memories FROM injections WHERE session_id=?", (sid,)
+            ).fetchall()
+            for mem in json.loads(r["memories"])
+        }
+        for row in db.execute(
+            "SELECT memory_id, canonical_hash FROM session_exposed_memories WHERE session_id=?",
+            (sid,),
+        ).fetchall():
+            if (row["memory_id"], row["canonical_hash"]) not in still_exposed:
+                db.execute(
+                    "DELETE FROM session_exposed_memories WHERE session_id=? AND memory_id=?",
+                    (sid, row["memory_id"]),
+                )
+
+    def _select_injection_by_hash(self, db, sid, content_hash):
+        if not content_hash:
+            return None
+        rows = db.execute(
+            "SELECT i.*, s.workspace_id AS injection_workspace_id FROM injections i LEFT JOIN sessions s ON s.id=i.session_id WHERE i.content_hash=? ORDER BY i.id DESC",
+            (content_hash,),
+        ).fetchall()
+        if not rows:
+            return None
+        own = next((r for r in rows if r["session_id"] == sid), None)
+        if own is not None:
+            return own
+        session = db.execute(
+            "SELECT workspace_id, task_id FROM sessions WHERE id=?", (sid,)
+        ).fetchone()
+        if session is not None:
+            if session["task_id"]:
+                same_task = next(
+                    (
+                        r
+                        for r in rows
+                        if r["injection_workspace_id"] == session["workspace_id"]
+                        and r["task_id"] == session["task_id"]
+                    ),
+                    None,
+                )
+                if same_task is not None:
+                    return same_task
+            same_ws = next(
+                (
+                    r
+                    for r in rows
+                    if r["injection_workspace_id"] == session["workspace_id"]
+                ),
+                None,
+            )
+            if same_ws is not None:
+                return same_ws
+        return rows[0]
+
+    def _inherit_row(self, db, sid, row, sequence=None):
         if row is None:
             db.execute(
                 "INSERT OR REPLACE INTO session_fences VALUES(?,'unknown inherited memory receipt')",
                 (sid,),
             )
             return
-        if row["session_id"] != sid and not db.execute(
+        if row["session_id"] == sid:
+            if sequence is not None and row["sequence"] is None:
+                db.execute(
+                    "UPDATE injections SET sequence=? WHERE id=?",
+                    (int(sequence), row["id"]),
+                )
+            return
+        if not db.execute(
             "SELECT 1 FROM inherited_receipts WHERE session_id=? AND receipt_id=?",
             (sid, row["id"]),
         ).fetchone():
             now = time.time()
             db.execute(
-                "INSERT INTO injections(session_id,policy,task_id,task_revision,memories,sources,created_at,content_hash) VALUES(?,?,?,?,?,?,?,?)",
+                "INSERT INTO injections(session_id,policy,task_id,task_revision,memories,sources,created_at,content_hash,sequence) VALUES(?,?,?,?,?,?,?,?,?)",
                 (
                     sid,
                     row["policy"],
@@ -642,6 +707,7 @@ class Engine:
                     row["sources"],
                     now,
                     row["content_hash"],
+                    int(sequence) if sequence is not None else None,
                 ),
             )
             db.execute("INSERT INTO inherited_receipts VALUES(?,?)", (sid, row["id"]))
@@ -651,25 +717,15 @@ class Engine:
                     (sid, mem["id"], mem["hash"], now),
                 )
 
-    def _inherit(self, db, sid, receipt_id):
+    def _inherit(self, db, sid, receipt_id, sequence=None):
         row = db.execute(
             "SELECT * FROM injections WHERE id=?", (receipt_id,)
         ).fetchone()
-        self._inherit_row(db, sid, row)
+        self._inherit_row(db, sid, row, sequence=sequence)
 
-    def _inherit_by_hash(self, db, sid, content_hash):
-        if not content_hash:
-            self._inherit_row(db, sid, None)
-            return
-        rows = db.execute(
-            "SELECT * FROM injections WHERE content_hash=? ORDER BY id DESC",
-            (content_hash,),
-        ).fetchall()
-        if not rows:
-            self._inherit_row(db, sid, None)
-            return
-        own = next((r for r in rows if r["session_id"] == sid), None)
-        self._inherit_row(db, sid, own or rows[0])
+    def _inherit_by_hash(self, db, sid, content_hash, sequence=None):
+        row = self._select_injection_by_hash(db, sid, content_hash)
+        self._inherit_row(db, sid, row, sequence=sequence)
 
     def _is_own_chat_echo(self, db, memory, sid):
         if memory.get("pinned"):
@@ -690,6 +746,8 @@ class Engine:
         parts = [f"memory:{memory['id']}"]
         if memory.get("source_ids"):
             parts.append(f"sources:{','.join(memory['source_ids'])}")
+        if memory.get("epistemic_status") == "unverified_summary":
+            parts.append("status:unverified_summary")
         if memory.get("conflicts_with"):
             parts.append(
                 f"conflicts:{','.join(str(x) for x in memory['conflicts_with'])}"
@@ -846,6 +904,7 @@ class Engine:
             "event.tool_call",
             "event.revise",
             "context.inherit",
+            "context.discard",
             "session.cursor",
             "context.prepare",
             "context.check",
@@ -949,15 +1008,45 @@ class Engine:
                     429,
                 )
                 if isinstance(receipt_id, int):
-                    db.execute(
-                        "UPDATE injections SET content_hash=? WHERE id=?",
-                        (fingerprint(result), receipt_id),
-                    )
+                    self._reconcile_receipt(db, receipt_id, operation, result)
                 db.execute(
                     "UPDATE evidence_usage SET used_bytes=used_bytes+? WHERE session_id=?",
                     (wire_bytes(result), session_id),
                 )
         return result
+
+    def _reconcile_receipt(self, db, receipt_id, operation, result):
+        if not isinstance(result, dict):
+            return
+        if result.get("status") == "evidence_budget_exhausted":
+            db.execute("DELETE FROM injections WHERE id=?", (receipt_id,))
+            return
+        row = db.execute(
+            "SELECT memories, sources FROM injections WHERE id=?", (receipt_id,)
+        ).fetchone()
+        if row is None:
+            return
+        memories = json.loads(row["memories"])
+        sources = json.loads(row["sources"])
+        if operation == "memory.search" and "results" in result:
+            kept_ids = {r["id"] for r in result["results"]}
+            if len(kept_ids) != len(memories):
+                memories = [m for m in memories if m["id"] in kept_ids]
+                sources = [
+                    {"id": r["id"], "revision": r["revision"]}
+                    for m in memories
+                    for r in self._evidence(db, m["id"])[1]
+                ]
+        elif operation == "transcript.read" and "entries" in result:
+            kept_sids = {e["source_id"] for e in result["entries"] if "source_id" in e}
+            sources = [s for s in sources if s["id"] in kept_sids]
+            if not sources:
+                db.execute("DELETE FROM injections WHERE id=?", (receipt_id,))
+                return
+        db.execute(
+            "UPDATE injections SET memories=?,sources=?,content_hash=? WHERE id=?",
+            (dump(memories), dump(sources), fingerprint(result), receipt_id),
+        )
 
     def _dispatch(self, db, op, p, sid, admin, query_vector):
         if op in ("onboarding.read", "onboarding.ack"):
@@ -1052,10 +1141,25 @@ class Engine:
             return dict(row) if row else {}
         if op == "context.inherit":
             self._session(db, sid)
+            sequence = int(p["sequence"]) if p.get("sequence") is not None else None
             if "content_hash" in p:
-                self._inherit_by_hash(db, sid, str(p.get("content_hash") or ""))
+                self._inherit_by_hash(
+                    db, sid, str(p.get("content_hash") or ""), sequence=sequence
+                )
             else:
-                self._inherit(db, sid, int(p.get("receipt_id", -1)))
+                self._inherit(
+                    db, sid, int(p.get("receipt_id", -1)), sequence=sequence
+                )
+            return {"ok": True}
+        if op == "context.discard":
+            self._session(db, sid)
+            content_hash = str(p.get("content_hash") or "")
+            if content_hash:
+                db.execute(
+                    "DELETE FROM injections WHERE session_id=? AND content_hash=? AND sequence IS NULL",
+                    (sid, content_hash),
+                )
+                self._prune_exposed_memories(db, sid)
             return {"ok": True}
         if op == "event.revise":
             self._session(db, sid)
@@ -1080,6 +1184,11 @@ class Engine:
                         (src["id"],),
                     )
                     self._invalidate_source(db, src["id"])
+                db.execute(
+                    "DELETE FROM injections WHERE session_id=? AND sequence BETWEEN ? AND ?",
+                    (sid, p["start"], p["end"]),
+                )
+                self._prune_exposed_memories(db, sid)
                 db.execute(
                     "INSERT INTO applied_corrections VALUES(?,?)", (sid, p["event_id"])
                 )
@@ -1177,13 +1286,13 @@ class Engine:
                         if isinstance(receipt, int):
                             self._inherit(db, data.session_id, receipt)
                         elif isinstance(parsed, dict) and parsed.get("status") != "evidence_budget_exhausted":
-                            rows = db.execute(
-                                "SELECT * FROM injections WHERE content_hash=? ORDER BY id DESC",
-                                (fingerprint(parsed),),
-                            ).fetchall()
-                            if rows:
-                                own = next((r for r in rows if r["session_id"] == data.session_id), None)
-                                self._inherit_row(db, data.session_id, own or rows[0])
+                            matched = self._select_injection_by_hash(
+                                db, data.session_id, fingerprint(parsed)
+                            )
+                            if matched is not None:
+                                self._inherit_row(
+                                    db, data.session_id, matched, sequence=data.sequence
+                                )
                     except (ValueError, AttributeError):
                         pass
                     return {"ignored": "memory_tool_echo"}
@@ -2056,11 +2165,6 @@ class Engine:
                     for r in self._evidence(db, m["id"])[1]
                 )
             static_refs.extend(handoff_refs)
-            if task:
-                static_refs.extend(
-                    {"id": s, "revision": self._row(db, "sources", s)["revision"]}
-                    for s in task.get("evidence_ids", [])
-                )
             static_sig = fingerprint([static_text, static_refs])
             now = time.time()
             if (
@@ -2081,7 +2185,7 @@ class Engine:
                     ),
                 )
                 if static_text or static_refs or task:
-                    receipt = db.execute(
+                    db.execute(
                         "INSERT INTO injections(session_id,policy,task_id,task_revision,memories,sources,created_at,content_hash) VALUES(?,?,?,?,?,?,?,?)",
                         (
                             sid,
@@ -2102,10 +2206,6 @@ class Engine:
                             now,
                             sha256_text(static_text) if static_text else "",
                         ),
-                    )
-                    db.execute(
-                        "INSERT OR REPLACE INTO context_snapshots VALUES(?,?,?,?)",
-                        (sid, static_sig, static_text, receipt.lastrowid),
                     )
                 for m in pinned_all:
                     db.execute(
@@ -2189,8 +2289,8 @@ class Engine:
                     (
                         sid,
                         policy,
-                        task["id"] if task else None,
-                        task["revision"] if task else None,
+                        None,
+                        None,
                         dump(
                             [
                                 {

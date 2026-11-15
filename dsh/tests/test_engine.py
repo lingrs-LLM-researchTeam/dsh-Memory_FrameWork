@@ -784,3 +784,170 @@ def test_handoff_tail_and_backward_transcript_tool(engine):
     with pytest.raises(DomainError) as ex3:
         engine.execute("task.checkpoint", {"id": t["id"], "expected_revision": 1}, "a2")
     assert ex3.value.code == "forbidden"
+
+
+def test_cross_workspace_global_recall_hash_does_not_fence_fork(engine):
+    shared_mem = memory(engine, "跨工作区全局架构约定", scope="global", sid="a1")
+    # Workspace A session a2 recalls the global memory
+    prep_a = engine.execute("context.prepare", {"query": "全局架构约定"}, "a2", "host")
+    assert shared_mem["content"] in prep_a["recall_text"]
+
+    # Workspace B binds a task tb and b1 recalls the exact same global memory text
+    tb = task(engine, wid="b")
+    bind(engine, "b1", tb["id"])
+    prep_b = engine.execute("context.prepare", {"query": "全局架构约定"}, "b1", "host")
+    assert prep_b["recall_text"] == prep_a["recall_text"]
+
+    # Forking a2 -> a_fork in Workspace A must not collide with b1's task_id or get fenced
+    engine.execute("session.upsert", {"id": "a_fork", "workspace_id": "a"}, channel="host")
+    engine.execute(
+        "context.inherit",
+        {"content_hash": sha256_text(prep_a["recall_text"]), "sequence": 4},
+        "a_fork",
+        "host",
+    )
+    assert engine.execute("context.check", {}, "a_fork", "host")["safe"]
+
+
+def test_discard_and_revise_release_exposed_recall_memories(engine):
+    m = memory(engine, "可回滚的增量召回条目", scope="workspace", sid="a1")
+    first = engine.execute("context.prepare", {"query": "增量召回条目"}, "a2", "host")
+    assert m["content"] in first["recall_text"]
+    recall_hash = sha256_text(first["recall_text"])
+
+    # 1. Pre-step rejection discards uncommitted recall so retry re-recalls it
+    engine.execute("context.discard", {"content_hash": recall_hash}, "a2", "host")
+    engine.execute("turn.begin", {"sequence": 2}, "a2", "host")
+    retried = engine.execute("context.prepare", {"query": "增量召回条目"}, "a2", "host")
+    assert m["content"] in retried["recall_text"]
+
+    # 2. Once committed at seq=12 and later replaced via event.revise, memory becomes recallable again
+    engine.execute(
+        "context.inherit",
+        {"content_hash": sha256_text(retried["recall_text"]), "sequence": 12},
+        "a2",
+        "host",
+    )
+    engine.execute("turn.begin", {"sequence": 3}, "a2", "host")
+    assert (
+        engine.execute("context.prepare", {"query": "增量召回条目"}, "a2", "host")[
+            "recall_text"
+        ]
+        == ""
+    )
+    engine.execute(
+        "event.revise", {"event_id": "edit-1", "start": 10, "end": 15}, "a2", "host"
+    )
+    engine.execute("turn.begin", {"sequence": 4}, "a2", "host")
+    after_revise = engine.execute(
+        "context.prepare", {"query": "增量召回条目"}, "a2", "host"
+    )
+    assert m["content"] in after_revise["recall_text"]
+
+
+def test_peer_task_evidence_revocation_does_not_fence_unexposed_session(engine):
+    t = task(engine)
+    bind(engine, "a1", t["id"])
+    bind(engine, "a2", t["id"])
+    src = engine.execute(
+        "event.ingest",
+        {
+            "session_id": "a1",
+            "event_id": "peer-ev-1",
+            "sequence": 1,
+            "role": "tool",
+            "content": "仅在窗口a1产生的验证证据",
+        },
+        channel="host",
+    )
+    # Lock a2's static context first so handoff is already established before peer evidence update
+    engine.execute("context.prepare", {"query": ""}, "a2", "host")
+    # Create clean a3 after a1's source, Wait: test unexposed task.evidence_ids specifically on a0!
+    engine.execute("session.upsert", {"id": "a0", "workspace_id": "a"}, channel="host")
+    bind(engine, "a0", t["id"])
+    # Pre-lock empty handoff before any sources or test with a2 whose handoff didn't include peer-ev-2:
+    src2 = engine.execute(
+        "event.ingest",
+        {
+            "session_id": "a1",
+            "event_id": "peer-ev-2",
+            "sequence": 2,
+            "role": "tool",
+            "content": "窗口a2从未见过的后续证据",
+        },
+        channel="host",
+    )
+    engine.execute(
+        "task.update",
+        {"id": t["id"], "expected_revision": 1, "status": "active", "evidence_ids": [src2["id"]]},
+        "a1",
+    )
+    engine.execute("turn.begin", {"sequence": 2}, "a2", "host")
+    engine.execute("context.prepare", {"query": ""}, "a2", "host")
+    admin(engine, "source.revoke", {"id": src2["id"], "expected_revision": 1})
+    assert engine.execute("context.check", {}, "a2", "host")["safe"]
+    assert src["id"]
+
+
+def test_truncated_search_only_records_returned_exposures_and_flags_unverified_summary(
+    engine,
+):
+    raw_src = engine.execute(
+        "event.ingest",
+        {
+            "session_id": "a1",
+            "event_id": "sum-src",
+            "sequence": 1,
+            "role": "user",
+            "content": "原文是一段完全不同的表述但包含关键词赤壁赋",
+        },
+        channel="host",
+    )
+    paraphrased = engine.execute(
+        "memory.propose",
+        {"content": "归纳摘要：苏轼夜游赤壁赋感悟", "source_ids": [raw_src["id"]]},
+        "a1",
+    )
+    admin(
+        engine,
+        "memory.update",
+        {"id": paraphrased["id"], "expected_revision": 1, "scope": "workspace"},
+    )
+    read_view = engine.execute("memory.read", {"id": paraphrased["id"]}, "a2")["memory"]
+    assert read_view.get("epistemic_status") == "unverified_summary"
+
+    # Tight manual budget so search truncates lower-ranked hits; revoking an unseen hit must NOT fence a2
+    m_high = memory(
+        engine, "高频匹配关键词麒麟瑞兽 " + ("甲" * 120), scope="workspace", importance=0.95
+    )
+    m_low = memory(
+        engine, "高频匹配关键词麒麟瑞兽 " + ("乙" * 600), scope="workspace", importance=0.1
+    )
+    old_pol = admin(engine, "snapshot")["policies"][0]
+    admin(
+        engine,
+        "policy.save",
+        {
+            "workspace_id": "a",
+            "expected_revision": old_pol["revision"],
+            "settings": {
+                **old_pol["settings"],
+                "context_mode": "manual",
+                "evidence_bytes": 4000,
+                "automatic_bytes": 1000,
+                "source_chars": 700,
+            },
+        },
+    )
+    engine.execute("turn.begin", {"sequence": 10}, "a2", "host")
+    # Consume most of the 4000B turn budget first so only m_high fits in memory.search
+    with engine.db.transaction() as db:
+        db.execute("UPDATE evidence_usage SET used_bytes=3350 WHERE session_id='a2'")
+    res = engine.execute("memory.search", {"query": "麒麟瑞兽"}, "a2")
+    returned_ids = [r["id"] for r in res["results"]]
+    assert m_high["id"] in returned_ids
+    assert m_low["id"] not in returned_ids
+    assert res.get("truncated") is True
+
+    admin(engine, "source.revoke", {"id": m_low["source_ids"][0], "expected_revision": 1})
+    assert engine.execute("context.check", {}, "a2", "host")["safe"]

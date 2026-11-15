@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS task_events(id INTEGER PRIMARY KEY AUTOINCREMENT,task
 CREATE TABLE IF NOT EXISTS profiles(workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id),revision INTEGER NOT NULL,weights TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS profile_history(workspace_id TEXT NOT NULL,revision INTEGER NOT NULL,weights TEXT NOT NULL,created_at REAL NOT NULL,PRIMARY KEY(workspace_id,revision));
 CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,object_type TEXT NOT NULL,object_id TEXT NOT NULL,revision INTEGER NOT NULL,workspace_id TEXT NOT NULL,session_id TEXT,task_id TEXT,broadcast INTEGER NOT NULL,created_at REAL NOT NULL);
-CREATE TABLE IF NOT EXISTS injections(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,policy INTEGER NOT NULL,task_id TEXT,task_revision INTEGER,memories TEXT NOT NULL,sources TEXT NOT NULL,created_at REAL NOT NULL,content_hash TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS injections(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,policy INTEGER NOT NULL,task_id TEXT,task_revision INTEGER,memories TEXT NOT NULL,sources TEXT NOT NULL,created_at REAL NOT NULL,content_hash TEXT NOT NULL DEFAULT '',sequence INTEGER);
 CREATE TABLE IF NOT EXISTS pending_inputs(session_id TEXT NOT NULL,message_id TEXT NOT NULL,message TEXT NOT NULL,status TEXT NOT NULL,created_at REAL NOT NULL,PRIMARY KEY(session_id,message_id));
 CREATE TABLE IF NOT EXISTS tool_calls(session_id TEXT NOT NULL,call_id TEXT NOT NULL,name TEXT NOT NULL,PRIMARY KEY(session_id,call_id));
 CREATE TABLE IF NOT EXISTS inherited_receipts(session_id TEXT NOT NULL,receipt_id INTEGER NOT NULL,PRIMARY KEY(session_id,receipt_id));
@@ -113,6 +113,8 @@ class Database:
                 db.execute(
                     "ALTER TABLE injections ADD COLUMN content_hash TEXT NOT NULL DEFAULT ''"
                 )
+            if "sequence" not in inj_cols:
+                db.execute("ALTER TABLE injections ADD COLUMN sequence INTEGER")
             db.execute(
                 "CREATE INDEX IF NOT EXISTS idx_injections_hash ON injections(content_hash)"
             )

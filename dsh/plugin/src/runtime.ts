@@ -268,7 +268,7 @@ export class MemoryRuntime {
             {
               operation: "context.inherit",
               session_id: this.key(session.id),
-              payload: { content_hash: contentHash },
+              payload: { content_hash: contentHash, sequence: event.seq },
             },
             signal,
           );
@@ -299,8 +299,8 @@ export class MemoryRuntime {
               operation: "context.inherit",
               session_id: this.key(session.id),
               payload: legacyReceipt
-                ? { receipt_id: Number(legacyReceipt[1]) }
-                : { content_hash: contentHash },
+                ? { receipt_id: Number(legacyReceipt[1]), sequence: event.seq }
+                : { content_hash: contentHash, sequence: event.seq },
             },
             signal,
           );
@@ -620,6 +620,7 @@ export class MemoryRuntime {
           );
         return decision;
       }
+      let uncommittedRecallHash = "";
       try {
         await this.queues.get(payload.agent.id);
         await this.replay(payload.agent.session, payload.signal);
@@ -667,6 +668,11 @@ export class MemoryRuntime {
             payload.signal,
           ),
         );
+        if (snapshot.recall_text) {
+          uncommittedRecallHash = createHash("sha256")
+            .update(snapshot.recall_text, "utf8")
+            .digest("hex");
+        }
         await this.syncGoal(payload.agent, snapshot.task, payload.signal);
         const last = await this.check(payload.agent.id, payload.signal);
         payload.signal.throwIfAborted();
@@ -687,8 +693,18 @@ export class MemoryRuntime {
             }),
           );
         }
+        uncommittedRecallHash = "";
         return decision;
       } catch (error) {
+        if (uncommittedRecallHash) {
+          await this.client
+            .call("host", {
+              operation: "context.discard",
+              session_id: this.key(payload.agent.id),
+              payload: { content_hash: uncommittedRecallHash },
+            })
+            .catch(() => undefined);
+        }
         this.ctx.logger.warn("Memory preparation rejected: %s", String(error));
         throw error; // The pending human message remains recoverable in the durable local journal and Dashboard.
       }

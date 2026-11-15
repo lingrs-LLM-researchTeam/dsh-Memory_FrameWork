@@ -9,7 +9,7 @@
 1. 安装 DSH 插件（若使用 Desktop，请将 `web` 替换为实际 profile）：
 
 ```powershell
-npx @deepseek-ai/dsh@0.2.2-rc.1 plugin --profile web add "file:./dsh-memory-framework-0.3.2.tgz"
+npx @deepseek-ai/dsh@0.2.2-rc.1 plugin --profile web add "file:./dsh-memory-framework-0.3.3.tgz"
 ```
 
 2. 直接启动或重载对应 DSH。插件内置了 Python 记忆核心 wheel 包，默认在 DSH 启动时自动于 `~/.memory-framework/runtime` 创建独立 Python 环境、生成 `credentials.json` 并在后台启动本地核心服务（默认监听 `http://127.0.0.1:18765`），无需在插件目录下手动运行启动脚本。
@@ -30,7 +30,7 @@ npx @deepseek-ai/dsh@0.2.2-rc.1 plugin --profile web add "file:./dsh-memory-fram
 
 任务迁移会解除旧会话绑定，清除旧工作环境下的验收证据，不自动移动历史记忆或扩大共享范围。请在目标工作区的会话中重新绑定任务。
 
-模型可调用 `memory_framework_search`、`memory_framework_read`、`memory_framework_remember`、`memory_framework_task_state`、`memory_framework_task_update`、`memory_framework_checkpoint`。模型不能管理共享授权、替换用户约束或自行完成用户验收。
+模型可调用 `memory_framework_search`、`memory_framework_read`、`memory_framework_remember`、`memory_framework_task_state`、`memory_framework_task_update`、`memory_framework_transcript`。模型不能管理共享授权、替换用户约束或自行完成用户验收。
 
 ## 可选向量模型
 
@@ -115,3 +115,7 @@ Dashboard 默认夜墨，可切换纸白，使用系统字体与轻量 CSS；无
 ## 0.3.2 工具同名冲突修复
 
 DSH 全局工具名必须唯一。该项目的旧版插件可能会与 dsh-linghun 在内的部分记忆插件同时注册 memory_read 导致本插件装载失败；本版本六个工具统一使用 memory_framework_ 前缀，理论可避免此问题，但实际仍不建议您与其他记忆辅助插件一同使用，否则仍然可能导致意外的情况
+
+## 0.3.3 前缀缓存保护、尾部增量召回与跨会话交接
+
+SQLite schema 自动升级至 4（保留全部已有任务、记忆与来源）。静态上下文 `<memory-framework-context>` 锁定任务契约、固定记忆与上任会话尾部交接现场，移除 `[memory-receipt:N]`、`next_action` 等易变噪声并通过内容 SHA-256 指纹追踪跨会话污点传播；动态关联记忆改为按轮次在对话尾部追加 `<memory-framework-recall>` 并在会话内去重；新增 `memory_framework_transcript` 支持跨会话历史向后翻页与折叠工具输出展开；`user_memory_mode` 默认设为 `evidence_only` 并抑制本会话聊天回声。

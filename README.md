@@ -2,7 +2,7 @@
 
 <img src="docs/images/dsh-logo.svg" width="96" height="96" alt="Memory Framework Logo" />
 
-# Memory Framework for DeepSeek Harness `0.3.2`
+# Memory Framework for DeepSeek Harness `0.3.3`
 
 **专供 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 使用的原生长期记忆、可追溯证据与跨窗口任务状态管理插件**
 
@@ -26,7 +26,7 @@
 ---
 
 > [!IMPORTANT]
-> **宿主平台专属声明**：本仓库当前版本（`v0.3.2`）为**专供 DeepSeek Harness (DSH) 使用的原生插件与独立 Python 记忆核心**，运行过程完全不依赖 AstrBot。
+> **宿主平台专属声明**：本仓库当前版本（`v0.3.3`）为**专供 DeepSeek Harness (DSH) 使用的原生插件与独立 Python 记忆核心**，运行过程完全不依赖 AstrBot。
 > 原先面向 QQ 群聊采集、好感度、黑话、人格学习、社交图谱及 AstrBot WebUI 的实现已独立拆分并迁入同级 **AstrBot_Memory_Framework** 仓库维护；两端仅共享不依赖宿主的纯检索融合与证据校验算法副本（`memory_framework_shared`），以便各自独立打包与安装。
 
 <a id="introduce"></a>
@@ -59,17 +59,17 @@
 
 ### 核心数据记录模型
 
-本地 SQLite 权威数据库（Schema v3）维护以下核心记录：
+本地 SQLite 权威数据库（Schema v4）维护以下核心记录：
 
 | 记录表 | 关键字段 | 职责与安全边界 |
 |---|---|---|
 | `workspaces` / `sessions` | `id`, `instance_id`, `workspace_id`, `task_id`, `cursor`, `subscribed` | 工作区与会话隔离单元、任务绑定状态、事件游标及广播订阅开关 |
-| `sources` | `id`, `session_id`, `event_id`, `role`, `content`, `content_hash`, `revision`, `status`, `promoted` | 权威原始消息与工具输出证据，按可信事件去重，单条上限 200,000 字符 |
+| `sources` | `id`, `session_id`, `event_id`, `role`, `content`, `content_hash`, `revision`, `status` | 权威原始消息与工具输出证据，按可信事件去重，单条上限 200,000 字符 |
 | `memories` | `id`, `workspace_id`, `session_id`, `task_id`, `content`, `scope`, `targets`, `importance`, `pinned`, `status`, `vector_enabled`, `revision` | 可追溯的事实、约束或决策，支持五级可见范围与乐观并发修订控制 |
-| `memory_sources` | `memory_id`, `source_id`, `quote` | 记忆与原始证据的多对多绑定；`quote` 须为原文逐字子串 |
-| `tasks` / `task_events` | `id`, `workspace_id`, `title`, `goal`, `constraints`, `acceptance`, `verification`, `next_action`, `blockers`, `status`, `revision` | 跨窗口共享的长程任务契约、验收条件、检查点与版本历史 |
-| `session_memory_exposures` / `session_fences` | `session_id`, `memory_id`, `receipt_id`, `reason` | 记录各会话已暴露的记忆与来源版本；来源撤销或缩权后触发会话隔离栅栏 |
-| `session_context` / `session_snapshots` | `session_id`, `provider`, `model`, `context_window`, `max_output_tokens`, `signature`, `receipt_id` | 宿主模型容量准入报告与跨轮次稳定快照缓存 |
+| `memory_sources` | `memory_id`, `source_id`, `revision`, `content_hash` | 记忆与原始证据的多对多绑定及版本快照校验 |
+| `tasks` / `task_events` | `id`, `workspace_id`, `title`, `goal`, `constraints`, `acceptance`, `verification`, `blockers`, `status`, `revision` | 跨窗口共享的长程任务契约、验收条件、里程碑状态与版本历史 |
+| `injections` / `session_fences` | `session_id`, `memories`, `sources`, `content_hash`, `sequence`, `reason` | 按 SHA-256 指纹记录各会话已暴露的记忆与来源版本；来源撤销或缩权后触发会话隔离栅栏 |
+| `session_context` / `session_static_contexts` / `session_exposed_memories` | `session_id`, `signature`, `text`, `handoff_text`, `memory_id`, `canonical_hash` | 宿主模型容量报告、静态契约与跨会话尾部现场锁定、会话内增量召回去重 |
 | `workspace_policies` / `evidence_usage` | `workspace_id`, `settings`, `turn_sequence`, `used_bytes`, `tool_calls`, `writes` | 工作区预算策略、单调递增轮次序号与每轮证据消耗账本 |
 | `vectors` / `embedding_daily_usage` | `memory_id`, `fingerprint`, `vector`, `day`, `input_chars`, `calls` | 绑定模型指纹的归一化向量存储及按 UTC 日持久化的向量字符消耗账本 |
 
@@ -118,7 +118,7 @@ score = w_task * task_match
 npx @deepseek-ai/dsh@0.2.2-rc.1 plugin --profile web add "https://github.com/lingrs-LLM-researchTeam/dsh-Memory_FrameWork"
 
 # 或从本地构建的发行包安装
-npx @deepseek-ai/dsh@0.2.2-rc.1 plugin --profile web add "file:./dsh-memory-framework-0.3.2.tgz"
+npx @deepseek-ai/dsh@0.2.2-rc.1 plugin --profile web add "file:./dsh-memory-framework-0.3.3.tgz"
 ```
 
 ### 2. 启动 DSH 即可自动运行
@@ -160,7 +160,8 @@ npx @deepseek-ai/dsh@0.2.2-rc.1 plugin --profile web add "file:./dsh-memory-fram
 | `automatic_bytes` | `12,000` B | `1,000` – `128,000` B | 手动/未知容量模式下每轮自动注入上限（须为工具预留至少 `2,000` B 差额） |
 | `max_tool_calls` | `12` 次 | `1` – `50` 次 | 单轮允许模型调用记忆与任务工具的最大次数 |
 | `max_writes` | `3` 次 | `0` – `20` 次 | 单轮允许模型执行记忆写入或任务状态更新的最大次数 |
-| `source_chars` | `2,000` 字符 | `100` – `12,000` 字符 | `memory_framework_read` 每次分页读取原始证据的最大字符数 |
+| `source_chars` | `2,000` 字符 | `100` – `12,000` 字符 | `memory_framework_read` 与 `memory_framework_transcript` 每次分页读取原始证据的最大字符数 |
+| `user_memory_mode` | `evidence_only` | `evidence_only` / `all` | 用户发言收录模式：默认仅保留聊天记录与来源证据按需收录，避免日常对话回声污染检索与缓存 |
 | `tool_memory_mode` | `evidence_only` | `evidence_only` / `allowlist` / `all` | 工具输出收录模式：默认仅保存原始证据待人工挑选，避免工具输出刷屏污染记忆库 |
 | `tool_max_chars` | `4,000` 字符 | `100` – `12,000` 字符 | 开启自动收录工具输出时的单条字符上限（超长、报错或同任务重复输出默认跳过） |
 | `embedding_daily_chars` | `200,000` 字符 | `1,000` – `10,000,000` 字符 | 工作区每日（UTC）向量化输入字符硬上限（查询与建索引共享，失败尝试亦计入） |
@@ -193,7 +194,7 @@ $env:MEMORY_EMBEDDING_DIMENSIONS = '1024'
 Dashboard 采用受 Moonshot AI 启发的高反差极简黑白（**夜墨 Ink / 纸白 Paper**）设计语言，纯原生 CSS 驱动，面板不可见时自动挂起轮询：
 
 1. **记忆库（`01`）**：按工作区、状态与关键词筛选记忆（每页 24 条），支持新建、编辑正文与可见范围、调整单条重要性、固定到上下文（Pinned）、查看关联原始证据及一键归档/恢复。
-2. **任务与工作区（`02`）**：创建包含**目标、硬约束、验收条件**的长程任务；在多个会话窗口绑定同一任务以跨窗口接续进度；支持人工逐项填写验收依据、保存检查点（Checkpoint）与跨工作区迁移任务。
+2. **任务与工作区（`02`）**：创建包含**目标、硬约束、验收条件**的长程任务；在多个会话窗口绑定同一任务以自动挂载上任窗口尾部现场并跨窗口接续进度；支持人工逐项填写验收依据、查看变更历史与跨工作区迁移任务。
 3. **广播范围（`03`）**：精细管理会话通知订阅与每条记忆的五级读取范围（`当前会话` / `同任务会话` / `当前工作区` / `指定工作区` / `个人全局`）。
 4. **权重实验室（`04`）**：交互式调节六项召回权重（合计恒为 100%）、半衰期、召回条数与冗余惩罚，支持输入查询实时对比「当前配置」与「草稿配置」的召回得分明细，并可随时回滚历史版本。
 5. **运行记录（`05`）**：查看事件同步游标、各会话上下文准入状态（是否需要干净接续）以及因拦截或中断而暂存的未送达输入。
@@ -205,12 +206,12 @@ Dashboard 采用受 Moonshot AI 启发的高反差极简黑白（**夜墨 Ink / 
 
 | 工具名称 | 功能说明 |
 |---|---|
-| `memory_framework_search` | 在当前会话授权范围内执行词法 + 语义混合检索，返回带来源 ID 与得分的记忆摘要 |
-| `memory_framework_read` | 读取指定记忆详情，并按 `source_id` 与 `offset` 分页深读原始证据片段及 SHA-256 校验值 |
+| `memory_framework_search` | 在当前会话授权范围内执行词法 + 语义混合检索（自动抑制本会话聊天回声），返回带来源 ID 的记忆摘要 |
+| `memory_framework_read` | 读取指定记忆详情，并按 `source_id` 与 `offset` 分页深读原始证据片段 |
 | `memory_framework_remember` | 基于当前会话已存在的真实 `source_ids` 与逐字匹配的 `quotes` 提议新增可追溯记忆 |
-| `memory_framework_task_state` | 读取当前会话所绑定长程任务的目标、硬约束、下一步、阻塞项与验收状态 |
-| `memory_framework_task_update` | 使用 `expected_revision` 更新任务的下一步（`next_action`）、阻塞项、决策或状态（未完成全部人工验收前禁止标记 `completed`） |
-| `memory_framework_checkpoint` | 为当前绑定任务创建可回溯的进度检查点快照 |
+| `memory_framework_task_state` | 读取当前会话所绑定长程任务的目标、硬约束、阻塞项与验收状态 |
+| `memory_framework_task_update` | 使用 `expected_revision` 更新任务里程碑状态、阻塞项或支撑证据（未完成全部人工验收前禁止标记 `completed`） |
+| `memory_framework_transcript` | 按 `before_sequence` 向后翻阅同任务上任会话的早期对话记录，或按 `source_id` 展开被折叠的工具输出/长消息 |
 
 ### 常见现象与排查
 
@@ -264,19 +265,21 @@ flowchart LR
 
 本插件在 DSH 对话链路中不调用额外的后台摘要大模型，但会在以下三个环节引入受控的上下文开销：
 
-1. **每轮前向上下文注入（`<memory-framework-context>`）**：在每个模型步骤开始前（`agent/pre-step`），若当前会话绑定了长程任务或存在匹配记忆，插件会将任务契约（目标、硬约束、下一步、验收状态）及高优召回记忆作为系统上下文注入。
-2. **模型主动工具调用（Agentic Memory Tools）**：模型在推理过程中若调用 `memory_framework_search`、`memory_framework_read`、`memory_framework_task_update` 等工具，工具定义（Schema）、工具返回结果以及触发的额外推理轮次会计入主模型的输入/输出 Token。
+1. **静态前缀上下文（`<memory-framework-context>`）与尾部增量召回（`<memory-framework-recall>`）**：在每个用户轮次入口（`agent/pre-step`），插件将任务契约（目标、硬约束、验收标准）、固定记忆与上任会话尾部交接现场锁定为静态前缀；跨会话关联记忆则以去重后的 `<memory-framework-recall>` 消息增量追加在对话尾部。
+2. **模型主动工具调用（Agentic Memory Tools）**：模型在推理过程中若调用 `memory_framework_search`、`memory_framework_read`、`memory_framework_transcript`、`memory_framework_task_update` 等工具，工具定义（Schema）、工具返回结果以及触发的额外推理轮次会计入主模型的输入/输出 Token。
 3. **可选外部 Embedding 调用**：若配置了外部向量模型并开启工作区语义检索，新记忆入库与语义搜索会消耗 Embedding 接口 Token（受每日默认 `200,000` 字符的 `embedding_daily_chars` 硬上限保护）。
 
-### 2. 为什么缓存命中率（Cache Hit Rate）可能出现小幅度下降？
+### 2. 为什么缓存命中率（Cache Hit Rate）能够保持稳定（仅在特定变更时小幅波动）？
 
 现代大模型 API（如 DeepSeek 官方 API）广泛依赖 **Prefix Caching（前缀缓存）** 来降低多轮对话的输入成本与首字延迟。
 
-- **插件的缓存保护机制**：`0.3.0+` 专门实现了**稳定快照签名（`context_signature`）机制**——只要当前关联任务版本、权限策略版本、权重版本以及召回的记忆内容与来源修订未发生改变，重复准入或重启恢复均返回完全一致的 `<memory-framework-context>` 文本与回执编号（`[memory-receipt:N]`），避免因无意义的时间戳或自增 ID 破坏前缀一致性。
-- **导致命中率小幅下降的场景**：
-  1. 当长程任务推进（例如模型或用户更新了 `next_action`、新增了决策或完成了某项验收条件）时，注入系统提示区的 `<memory-framework-context>` 内容会随之更新；
-  2. 当用户在当前或跨窗口会话中产生了新的高相关记忆，或本轮查询词触发了不同的 Top-K 记忆召回集合时，动态注入块发生变化，会导致该注入点之后的对话历史在当前轮无法命中上轮的 KV Cache 前缀；
-  3. 同一轮内穿插多次记忆工具调用会增加请求轮次与动态工具输出。
+- **插件的缓存保护机制（`0.3.3+`）**：
+  1. **静态前缀锁定（Static Prefix Lock）**：移除了模型可见的 `[memory-receipt:N]` 自增回执号、`revision`、时间戳等高频变动噪声（改为基于内容 SHA-256 指纹追踪跨会话污点传播）；任务进度更新（`status` / `blockers`）不再改动 `<memory-framework-context>` 静态区，且轮内工具续跑步骤零 IPC 直通。
+  2. **尾部增量去重召回（Tail Recall）与回声抑制**：动态检索结果仅在新用户轮次尾部按需追加，已在本会话暴露过的记忆不再重复注入，本会话自身的聊天记录也不会被重复召回。
+- **仍会导致前缀刷新的场景**：
+  1. 用户在 Dashboard 修改了当前绑定任务的契约本身（`title`、`goal`、`constraints`、`acceptance`）或切换了绑定任务；
+  2. 用户新增、编辑或取消了固定记忆（`pinned`），触发静态上下文快照更新；
+  3. 同一轮内穿插多次记忆工具调用会增加请求步数与工具输出。
 
 ### 3. 联动预算计算公式与最佳实践建议
 
@@ -330,9 +333,9 @@ cd ../..
 ```
 
 构建产物位于 `dist/dsh/`，包含：
-- `memory_framework_dsh-0.3.2-py3-none-any.whl`（Python 记忆核心与共享算法 Wheel）
-- `dsh-memory-framework-0.3.2.tgz`（DSH 原生插件与内嵌 Dashboard npm 包）
-- `memory-framework-dsh-0.3.2.zip`（含启动脚本、预构建包、独立 Dashboard、完整源码及 SHA-256 清单的一体化发行包）
+- `memory_framework_dsh-0.3.3-py3-none-any.whl`（Python 记忆核心与共享算法 Wheel）
+- `dsh-memory-framework-0.3.3.tgz`（DSH 原生插件与内嵌 Dashboard npm 包）
+- `memory-framework-dsh-0.3.3.zip`（含启动脚本、预构建包、独立 Dashboard、完整源码及 SHA-256 清单的一体化发行包）
 
 ---
 

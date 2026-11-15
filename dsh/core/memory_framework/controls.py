@@ -26,6 +26,8 @@ def memory_view(memory, chars):
     }
     if truncated:
         result["content_truncated"] = True
+    if memory.get("epistemic_status") == "unverified_summary":
+        result["epistemic_status"] = "unverified_summary"
     if memory.get("conflicts_with"):
         result["conflicts_with"] = memory["conflicts_with"]
     return result

@@ -298,9 +298,69 @@ describe("turn-level preparation, static prefix lock, and tail recall", () => {
       {
         operation: "context.inherit",
         session_id: "local:s1",
-        payload: { content_hash: expectedHash },
+        payload: { content_hash: expectedHash, sequence: 5 },
       },
       signal,
     );
+
+    // Pre-step rejection after context.prepare discards uncommitted recall exposure
+    let checkCount = 0;
+    callSpy.mockImplementation(async (_channel, req: any) => {
+      if (req.operation === "workspace.upsert") return {};
+      if (req.operation === "session.upsert")
+        return {
+          id: "local:s1",
+          workspace_id: "local:w1",
+          task_id: "t1",
+          cursor: 0,
+        };
+      if (req.operation === "context.check") {
+        checkCount += 1;
+        return { safe: true, policy_revision: checkCount === 1 ? 1 : 2 };
+      }
+      if (req.operation === "context.prepare")
+        return {
+          text: "<memory-framework-context>\nLOCKED_STATIC_CONTRACT\n</memory-framework-context>",
+          recall_text:
+            "<memory-framework-recall>\n[memory:10] Uncommitted recall\n</memory-framework-recall>",
+          policy_revision: 1,
+          task: null,
+          safe: true,
+          context_chars: 16000,
+        };
+      if (req.operation === "context.discard") return { ok: true };
+      return {};
+    });
+    const staleHash = createHash("sha256")
+      .update(
+        "<memory-framework-recall>\n[memory:10] Uncommitted recall\n</memory-framework-recall>",
+        "utf8",
+      )
+      .digest("hex");
+    await expect(
+      preStepHandler(
+        {
+          agent,
+          modelSelection: { provider: "deepseek", model: "deepseek-chat" },
+          signal,
+        },
+        async () => ({
+          kind: "enter",
+          messages: [
+            {
+              id: "m2",
+              role: "user",
+              source: { kind: "user" },
+              content: [{ type: "text", text: "second" }],
+            },
+          ],
+        }),
+      ),
+    ).rejects.toThrow("读取期间记忆范围发生变化");
+    expect(callSpy).toHaveBeenCalledWith("host", {
+      operation: "context.discard",
+      session_id: "local:s1",
+      payload: { content_hash: staleHash },
+    });
   });
 });

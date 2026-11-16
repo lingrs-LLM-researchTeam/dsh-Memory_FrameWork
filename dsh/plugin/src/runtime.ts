@@ -432,16 +432,6 @@ export class MemoryRuntime {
         );
       role = "user";
       content = plainText(event.data.content);
-      this.savePending(session.id, event.data, true);
-      await this.client.call(
-        "host",
-        {
-          operation: "pending.admitted",
-          session_id: this.key(session.id),
-          payload: { message_id: event.data.id },
-        },
-        signal,
-      );
     } else if (event.type === "assistant/message") {
       role = "assistant";
       content = plainText(event.data.message.content);
@@ -477,6 +467,20 @@ export class MemoryRuntime {
         },
         signal,
       );
+    }
+    if (event.type === "user/message" && event.data.source.kind === "user") {
+      // Keep both recovery copies pending until event ingestion succeeds. This
+      // is not proof of a durable DSH flush and must not authorize compaction.
+      await this.client.call(
+        "host",
+        {
+          operation: "pending.admitted",
+          session_id: this.key(session.id),
+          payload: { message_id: event.data.id },
+        },
+        signal,
+      );
+      this.savePending(session.id, event.data, true);
     }
   }
 

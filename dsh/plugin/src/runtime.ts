@@ -56,6 +56,14 @@ const Prepared = z.object({
   context_chars: z.number(),
 });
 const Check = z.object({ safe: z.boolean(), policy_revision: z.number() });
+const MIRRORED_EVENTS = new Set<string>([
+  "turn/start",
+  "user/message",
+  "assistant/message",
+  "tool/call",
+  "tool/result",
+  "compaction/end",
+]);
 type Prepared = z.infer<typeof Prepared>;
 const JournalRow = z
   .object({
@@ -262,7 +270,8 @@ export class MemoryRuntime {
     const queued = before.catch(() => undefined).then(work);
     this.queues.set(id, queued);
     void queued.catch((error) => {
-      this.fences.add(id);
+      // Synchronization failures reject admission via the queue/replay. Only an
+      // authoritative context.check may classify a context as contaminated.
       this.ctx.logger.warn("Memory journal unavailable: %s", String(error));
     });
     return queued;
@@ -657,7 +666,10 @@ export class MemoryRuntime {
       });
     });
     this.ctx.on("session/event", (session, event) => {
-      // Every append is fed in order, but only replay advances the durable cursor after a flush.
+      // Native creation emits permission metadata before attaching a workspace.
+      // Mirror only events with memory effects; replay still covers the full log
+      // and alone advances the durable cursor after a flush.
+      if (!MIRRORED_EVENTS.has(event.type)) return;
       this.enqueue(session.id, async () => {
         await this.ensure(session);
         await this.ingest(session, event);

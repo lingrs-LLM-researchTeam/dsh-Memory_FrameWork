@@ -1,8 +1,8 @@
 import Schema from "@deepseek-ai/schemastery";
 import { z } from "zod";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, fsyncSync, ftruncateSync, mkdirSync, openSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { Remote, RemoteError, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
 import { defineTool } from "@deepseek-ai/dsh-tools";
@@ -177,11 +177,53 @@ var MemoryRuntime = class {
 		this.client = new CoreClient(coreUrl, credentialsFile);
 		this.journal = join(dirname(expandPath(credentialsFile)), "dsh-" + instanceId + "-pending.jsonl");
 		mkdirSync(dirname(this.journal), { recursive: true });
-		if (existsSync(this.journal)) for (const line of readFileSync(this.journal, "utf8").split("\n").filter(Boolean)) {
-			const row = JournalRow.parse(JSON.parse(line));
-			const key = row.sessionId + ":" + row.messageId;
-			if (row.admitted) this.pending.delete(key);
-			else this.pending.set(key, row);
+		if (existsSync(this.journal)) {
+			const contents = readFileSync(this.journal);
+			const lines = contents.toString("utf8").split("\n");
+			let damagedTail;
+			for (const [index, line] of lines.entries()) {
+				if (!line) continue;
+				let value;
+				try {
+					value = JSON.parse(line);
+				} catch (error) {
+					if (index !== lines.length - 1) throw error;
+					damagedTail = contents.subarray(contents.lastIndexOf(10) + 1);
+					break;
+				}
+				const row = JournalRow.parse(value);
+				const key = row.sessionId + ":" + row.messageId;
+				if (row.admitted) this.pending.delete(key);
+				else this.pending.set(key, row);
+			}
+			if (damagedTail) {
+				const backup = this.journal + ".corrupt-" + randomUUID();
+				writeFileSync(backup, damagedTail, {
+					flag: "wx",
+					mode: 384,
+					flush: true
+				});
+				if (process.platform !== "win32") {
+					const directory = openSync(dirname(this.journal), "r");
+					try {
+						fsyncSync(directory);
+					} finally {
+						closeSync(directory);
+					}
+				}
+				const fd = openSync(this.journal, "r+");
+				try {
+					if (!readFileSync(fd).equals(contents)) throw new Error("Memory journal changed during recovery; retry startup");
+					ftruncateSync(fd, contents.length - damagedTail.length);
+					fsyncSync(fd);
+				} finally {
+					closeSync(fd);
+				}
+				this.ctx.logger.warn("Memory journal recovered an incomplete tail; preserved %s bytes in %s", damagedTail.length, backup);
+			} else if (contents.length && contents.at(-1) !== 10) appendFileSync(this.journal, "\n", {
+				encoding: "utf8",
+				flush: true
+			});
 		}
 	}
 	key(id) {

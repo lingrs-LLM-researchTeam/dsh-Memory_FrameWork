@@ -28,6 +28,8 @@ npx @deepseek-ai/dsh@0.2.2-rc.1 plugin --profile web add "file:./dsh-memory-fram
 - 来源撤销：派生记忆立即隔离，相关任务验收失效。已经接触该来源的会话在后续准入时被阻止；原生面板可建立干净接续会话。旧回复和已发送给模型的请求不能追溯删除。
 - 干净接续：新建空会话并绑定当前任务，不复制旧历史。尚未送达的真人输入保存在运行记录中，需核对后重新发送；附件不自动搬运。
 
+启动时若恢复日志最后一条记录因中断写入而缺少换行且不是完整 JSON，插件会先把该片段的原始字节保存到同目录下唯一的 `dsh-<instanceId>-pending.jsonl.corrupt-<id>` 文件，再恢复此前完整记录；日志会提示备份位置，不输出消息正文。片段无法自动补全，需要核对后手动恢复，请保护备份中的私人内容。中间记录损坏、已换行的损坏记录或记录字段不合法仍会阻止启动；备份或修复失败也不会静默跳过。此恢复针对进程中断，不保证硬件故障或断电后的完整性，仍应保留数据备份。
+
 任务迁移会解除旧会话绑定，清除旧工作环境下的验收证据，不自动移动历史记忆或扩大共享范围。请在目标工作区的会话中重新绑定任务。
 
 模型可调用 `memory_framework_search`、`memory_framework_read`、`memory_framework_remember`、`memory_framework_task_state`、`memory_framework_task_update`、`memory_framework_checkpoint`。模型不能管理共享授权、替换用户约束或自行完成用户验收。

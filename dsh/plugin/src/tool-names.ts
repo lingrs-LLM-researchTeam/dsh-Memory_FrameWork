@@ -5,5 +5,5 @@ export const MEMORY_TOOLS = {
   remember: "memory_framework_remember",
   taskState: "memory_framework_task_state",
   taskUpdate: "memory_framework_task_update",
-  checkpoint: "memory_framework_checkpoint",
+  transcript: "memory_framework_transcript",
 } as const;

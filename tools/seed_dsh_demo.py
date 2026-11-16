@@ -62,7 +62,6 @@ def main():
                 "id": task["id"],
                 "expected_revision": 1,
                 "status": "active",
-                "next_action": "验证广播范围变更与断线重连",
                 "decisions": ["任务账本使用 SQLite 事务与版本检查"],
             },
             "demo:design",

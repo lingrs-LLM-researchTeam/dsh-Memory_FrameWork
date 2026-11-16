@@ -90,6 +90,14 @@ class TaskUpdate(Contract):
     evidence_ids: list[str] | None = Field(default=None, max_length=100)
 
 
+class TranscriptRead(Contract):
+    session_id: str | None = Field(default=None, max_length=500)
+    before_sequence: int | None = Field(default=None, ge=0)
+    limit: int = Field(default=10, ge=1, le=30)
+    source_id: str | None = Field(default=None, max_length=500)
+    offset: int = Field(default=0, ge=0)
+
+
 class Weights(Contract):
     task: float = Field(default=0.30, ge=0, le=1)
     relevance: float = Field(default=0.25, ge=0, le=1)
@@ -141,6 +149,8 @@ class WorkspacePolicy(Contract):
     max_tool_calls: int = Field(default=12, ge=1, le=50)
     max_writes: int = Field(default=3, ge=0, le=20)
     source_chars: int = Field(default=2000, ge=100, le=12000)
+    user_memory_mode: Literal["evidence_only", "all"] = "evidence_only"
+    task_transcript_enabled: bool = False
     tool_memory_mode: Literal["evidence_only", "allowlist", "all"] = "evidence_only"
     tool_allowlist: list[str] = Field(default_factory=list, max_length=100)
     tool_max_chars: int = Field(default=4000, ge=100, le=12000)

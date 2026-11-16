@@ -106,7 +106,7 @@ def test_old_policy_json_defaults_to_follow_without_erasing_limits(tmp_path):
     assert sync(e)["automatic_bytes"] > 12000
     with e.db.transaction() as db:
         assert (
-            db.execute("SELECT value FROM meta WHERE key='schema'").fetchone()[0] == 3
+            db.execute("SELECT value FROM meta WHERE key='schema'").fetchone()[0] == 4
         )
     e.close()
 

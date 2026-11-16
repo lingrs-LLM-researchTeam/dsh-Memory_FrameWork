@@ -1,5 +1,9 @@
 import type { Context } from "@deepseek-ai/cordis";
-import type { UserMessage } from "@deepseek-ai/dsh-session";
+import type {
+  Session,
+  SessionEvent,
+  UserMessage,
+} from "@deepseek-ai/dsh-session";
 import * as fs from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +14,7 @@ vi.mock("node:fs", async (importOriginal) => {
   const original = await importOriginal<typeof import("node:fs")>();
   return {
     ...original,
+    appendFileSync: vi.fn(original.appendFileSync),
     writeFileSync: vi.fn(original.writeFileSync),
     ftruncateSync: vi.fn(original.ftruncateSync),
     fsyncSync: vi.fn(original.fsyncSync),
@@ -73,6 +78,7 @@ function append(runtime: MemoryRuntime, messageId: string, admitted = false) {
 }
 
 afterEach(() => {
+  vi.mocked(fs.appendFileSync).mockReset();
   vi.mocked(fs.writeFileSync).mockReset();
   vi.mocked(fs.ftruncateSync).mockReset();
   vi.mocked(fs.fsyncSync).mockReset();
@@ -274,5 +280,105 @@ describe("pending input journal recovery", () => {
     expect(fs.readFileSync(f.backups()[0], "utf8")).toBe(tail);
     expect(pendingIds(f.start())).toEqual(["a"]);
     expect(f.warn).not.toHaveBeenCalled();
+  });
+});
+
+describe("pending admission ordering", () => {
+  const session = { id: "s", isOwnSeq: () => true } as unknown as Session;
+  const event = {
+    type: "user/message",
+    seq: 1,
+    data: pendingRow("a").message,
+  } as unknown as SessionEvent;
+
+  it("retains recovery input when event ingestion fails, including after restart", async () => {
+    const f = fixture(line(pendingRow("a")));
+    const runtime = f.start();
+    const call = vi
+      .spyOn(runtime.client, "call")
+      .mockImplementation(async (_, request) => {
+        if (request.operation === "event.ingest")
+          throw new Error("ingest unavailable");
+        return {};
+      });
+    await expect(runtime.ingest(session, event)).rejects.toThrow(
+      "ingest unavailable",
+    );
+    expect(call.mock.calls.map(([, request]) => request.operation)).toEqual([
+      "event.ingest",
+    ]);
+    expect(pendingIds(runtime)).toEqual(["a"]);
+    expect(pendingIds(f.start())).toEqual(["a"]);
+  });
+
+  it("keeps the journal pending if the core admission acknowledgement fails", async () => {
+    const f = fixture(line(pendingRow("a")));
+    const runtime = f.start();
+    const call = vi
+      .spyOn(runtime.client, "call")
+      .mockImplementation(async (_, request) => {
+        if (request.operation === "pending.admitted")
+          throw new Error("admission unavailable");
+        return {};
+      });
+    await expect(runtime.ingest(session, event)).rejects.toThrow(
+      "admission unavailable",
+    );
+    expect(call.mock.calls.map(([, request]) => request.operation)).toEqual([
+      "event.ingest",
+      "pending.admitted",
+    ]);
+    expect(pendingIds(f.start())).toEqual(["a"]);
+    call.mockResolvedValue({});
+    await runtime.ingest(session, event);
+    expect(pendingIds(f.start())).toEqual([]);
+  });
+
+  it("admits only after successful ingestion and tolerates repeated replay", async () => {
+    const f = fixture(line(pendingRow("a")));
+    const runtime = f.start();
+    const call = vi.spyOn(runtime.client, "call").mockResolvedValue({});
+    await runtime.ingest(session, event);
+    expect(call.mock.calls.map(([, request]) => request.operation)).toEqual([
+      "event.ingest",
+      "pending.admitted",
+    ]);
+    expect(pendingIds(runtime)).toEqual([]);
+    const admitted = fs.readFileSync(f.journal, "utf8");
+    await runtime.ingest(session, event);
+    expect(fs.readFileSync(f.journal, "utf8")).toBe(admitted);
+    expect(pendingIds(f.start())).toEqual([]);
+  });
+
+  it("retries safely after the local admitted append fails", async () => {
+    const f = fixture(line(pendingRow("a")));
+    const runtime = f.start();
+    vi.spyOn(runtime.client, "call").mockResolvedValue({});
+    vi.mocked(fs.appendFileSync).mockImplementationOnce(() => {
+      throw new Error("journal unavailable");
+    });
+    await expect(runtime.ingest(session, event)).rejects.toThrow(
+      "journal unavailable",
+    );
+    expect(pendingIds(runtime)).toEqual(["a"]);
+    const restarted = f.start();
+    expect(pendingIds(restarted)).toEqual(["a"]);
+    vi.spyOn(restarted.client, "call").mockResolvedValue({});
+    await restarted.ingest(session, event);
+    expect(pendingIds(f.start())).toEqual([]);
+  });
+
+  it("preserves admission of non-text user input without inventing a text event", async () => {
+    const f = fixture(line(pendingRow("a")));
+    const runtime = f.start();
+    const call = vi.spyOn(runtime.client, "call").mockResolvedValue({});
+    await runtime.ingest(session, {
+      ...event,
+      data: { ...pendingRow("a").message, content: [] },
+    } as unknown as SessionEvent);
+    expect(call.mock.calls.map(([, request]) => request.operation)).toEqual([
+      "pending.admitted",
+    ]);
+    expect(pendingIds(f.start())).toEqual([]);
   });
 });

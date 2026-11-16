@@ -1,7 +1,17 @@
 import type { JsonValue } from "./contracts.js";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import {
+  appendFileSync,
+  closeSync,
+  existsSync,
+  fsyncSync,
+  ftruncateSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
@@ -39,6 +49,7 @@ const SessionState = z.object({
 const Prepared = z.object({
   text: z.string(),
   recall_text: z.string().default(""),
+  prepared_receipt_ids: z.array(z.number().int()).default([]),
   policy_revision: z.number(),
   task: z.record(z.string(), z.json()).nullable(),
   safe: z.boolean(),
@@ -72,6 +83,7 @@ export class MemoryRuntime {
   private readonly fences = new Set<string>();
   private readonly dirtySessions = new Set<string>();
   private readonly syncedModels = new Map<string, string>();
+  private readonly pendingExposures = new Map<string, number[]>();
   private readonly queues = new Map<string, Promise<void>>();
   private readonly activeSessions = new Set<string>();
   private readonly eventCursors = new Map<string, number>();
@@ -101,13 +113,66 @@ export class MemoryRuntime {
     );
     mkdirSync(dirname(this.journal), { recursive: true });
     if (existsSync(this.journal)) {
-      for (const line of readFileSync(this.journal, "utf8")
-        .split("\n")
-        .filter(Boolean)) {
-        const row = JournalRow.parse(JSON.parse(line));
+      const contents = readFileSync(this.journal);
+      const lines = contents.toString("utf8").split("\n");
+      let damagedTail: Buffer | undefined;
+      for (const [index, line] of lines.entries()) {
+        if (!line) continue;
+        let value: unknown;
+        try {
+          value = JSON.parse(line);
+        } catch (error) {
+          // Only an unterminated final record can be a torn append. Earlier or
+          // newline-terminated corruption must still stop startup.
+          if (index !== lines.length - 1) throw error;
+          damagedTail = contents.subarray(contents.lastIndexOf(0x0a) + 1);
+          break;
+        }
+        const row = JournalRow.parse(value);
         const key = row.sessionId + ":" + row.messageId;
         if (row.admitted) this.pending.delete(key);
         else this.pending.set(key, row);
+      }
+      if (damagedTail) {
+        // Preserve the exact bytes before removing only the incomplete tail.
+        // Never rewrite the valid prefix, which may contain unprocessed input.
+        const backup = this.journal + ".corrupt-" + randomUUID();
+        writeFileSync(backup, damagedTail, {
+          flag: "wx",
+          mode: 0o600,
+          flush: true,
+        });
+        // Persist the new backup name before truncating on POSIX. Node cannot
+        // portably fsync directories on Windows; there we only promise recovery
+        // from a process interruption, not a system/power failure.
+        if (process.platform !== "win32") {
+          const directory = openSync(dirname(this.journal), "r");
+          try {
+            fsyncSync(directory);
+          } finally {
+            closeSync(directory);
+          }
+        }
+        const fd = openSync(this.journal, "r+");
+        try {
+          if (!readFileSync(fd).equals(contents))
+            throw new Error(
+              "Memory journal changed during recovery; retry startup",
+            );
+          ftruncateSync(fd, contents.length - damagedTail.length);
+          fsyncSync(fd);
+        } finally {
+          closeSync(fd);
+        }
+        this.ctx.logger.warn(
+          "Memory journal recovered an incomplete tail; preserved %s bytes in %s",
+          damagedTail.length,
+          backup,
+        );
+      } else if (contents.length && contents.at(-1) !== 0x0a) {
+        // A complete JSON record without its final newline must not be joined
+        // to the next append.
+        appendFileSync(this.journal, "\n", { encoding: "utf8", flush: true });
       }
     }
   }
@@ -242,6 +307,26 @@ export class MemoryRuntime {
   }
 
   async ingest(session: Session, event: SessionEvent, signal?: AbortSignal) {
+    // Compaction registers this optional event in the host; no hard dependency is needed.
+    const compaction = z
+      .object({ error: z.unknown().optional() })
+      .safeParse(event.data);
+    if (
+      String(event.type) === "compaction/end" &&
+      compaction.success &&
+      !compaction.data.error
+    ) {
+      await this.client.call(
+        "host",
+        {
+          operation: "context.refresh",
+          session_id: this.key(session.id),
+          payload: {},
+        },
+        signal,
+      );
+      this.dirtySessions.add(session.id);
+    }
     if (event.type === "turn/start") {
       await this.client.call(
         "host",
@@ -277,9 +362,7 @@ export class MemoryRuntime {
         const snapshot = z
           .object({
             form: z.literal("snapshot"),
-            sections: z.array(
-              z.object({ name: z.string(), text: z.string() }),
-            ),
+            sections: z.array(z.object({ name: z.string(), text: z.string() })),
           })
           .safeParse(event.data.source);
         const section = snapshot.success
@@ -607,10 +690,25 @@ export class MemoryRuntime {
       const userMessages = decision.messages.filter(
         (m) => m.source.kind === "user",
       );
+      if (this.snapshots.has(payload.agent.id)) {
+        await this.queues.get(payload.agent.id);
+        const admission = await this.check(payload.agent.id, payload.signal);
+        if (!admission.safe)
+          throw new CoreError(
+            "clean_handoff_required",
+            "请创建干净接续会话",
+            409,
+          );
+      }
+      const modelKey = JSON.stringify({
+        selection: payload.modelSelection,
+        maxTokens: payload.agent.options.maxTokens ?? null,
+      });
       const isTurnEntry =
         userMessages.length > 0 ||
         !this.snapshots.has(payload.agent.id) ||
-        this.dirtySessions.has(payload.agent.id);
+        this.dirtySessions.has(payload.agent.id) ||
+        this.syncedModels.get(payload.agent.id) !== modelKey;
       if (!isTurnEntry) {
         if (this.fences.has(payload.agent.id))
           throw new CoreError(
@@ -621,6 +719,7 @@ export class MemoryRuntime {
         return decision;
       }
       let uncommittedRecallHash = "";
+      let preparedReceiptIds: number[] = [];
       try {
         await this.queues.get(payload.agent.id);
         await this.replay(payload.agent.session, payload.signal);
@@ -636,10 +735,6 @@ export class MemoryRuntime {
           .map((m) => plainText(m.content))
           .join("\n")
           .slice(-8000);
-        const modelKey = JSON.stringify({
-          selection: payload.modelSelection,
-          maxTokens: payload.agent.options.maxTokens ?? null,
-        });
         if (this.syncedModels.get(payload.agent.id) !== modelKey) {
           await this.client.call(
             "host",
@@ -668,6 +763,7 @@ export class MemoryRuntime {
             payload.signal,
           ),
         );
+        preparedReceiptIds = snapshot.prepared_receipt_ids;
         if (snapshot.recall_text) {
           uncommittedRecallHash = createHash("sha256")
             .update(snapshot.recall_text, "utf8")
@@ -683,6 +779,10 @@ export class MemoryRuntime {
             409,
           );
         this.snapshots.set(payload.agent.id, snapshot);
+        this.pendingExposures.set(payload.agent.id, [
+          ...(this.pendingExposures.get(payload.agent.id) ?? []),
+          ...preparedReceiptIds,
+        ]);
         this.dirtySessions.delete(payload.agent.id);
         this.updates.delete(payload.agent.id);
         if (snapshot.recall_text) {
@@ -696,12 +796,15 @@ export class MemoryRuntime {
         uncommittedRecallHash = "";
         return decision;
       } catch (error) {
-        if (uncommittedRecallHash) {
+        if (uncommittedRecallHash || preparedReceiptIds.length) {
           await this.client
             .call("host", {
               operation: "context.discard",
               session_id: this.key(payload.agent.id),
-              payload: { content_hash: uncommittedRecallHash },
+              payload: {
+                content_hash: uncommittedRecallHash,
+                receipt_ids: preparedReceiptIds,
+              },
             })
             .catch(() => undefined);
         }
@@ -712,12 +815,26 @@ export class MemoryRuntime {
     this.ctx.on("agent/turn-stopping", async ({ agent, signal }) => {
       await this.queues.get(agent.id);
       await this.replay(agent.session, signal);
+      const receiptIds = this.pendingExposures.get(agent.id) ?? [];
+      if (receiptIds.length) {
+        await this.client.call(
+          "host",
+          {
+            operation: "context.discard",
+            session_id: this.key(agent.id),
+            payload: { receipt_ids: receiptIds },
+          },
+          signal,
+        );
+        this.pendingExposures.delete(agent.id);
+      }
       await this.mirrorPending(agent.session, signal);
     });
     this.ctx.on("agent/disposed", ({ agent }) => {
       this.snapshots.delete(agent.id);
       this.dirtySessions.delete(agent.id);
       this.syncedModels.delete(agent.id);
+      this.pendingExposures.delete(agent.id);
       this.queues.delete(agent.id);
       this.activeSessions.delete(agent.id);
       this.updates.delete(agent.id);

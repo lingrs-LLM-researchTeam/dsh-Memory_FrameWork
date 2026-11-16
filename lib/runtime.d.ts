@@ -21,6 +21,7 @@ export declare class MemoryRuntime {
     private readonly fences;
     private readonly dirtySessions;
     private readonly syncedModels;
+    private readonly pendingExposures;
     private readonly queues;
     private readonly activeSessions;
     private readonly eventCursors;

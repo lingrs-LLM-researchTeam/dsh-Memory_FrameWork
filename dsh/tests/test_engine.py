@@ -49,6 +49,14 @@ def bind(e, sid, tid):
     )
 
 
+def enable_transcripts(e):
+    old = admin(e, "snapshot")["policies"][0]
+    admin(e, "policy.save", {
+        "workspace_id": old["workspace_id"], "expected_revision": old["revision"],
+        "settings": {**old["settings"], "task_transcript_enabled": True},
+    })
+
+
 def test_scope_and_scope_changes_are_authoritative(engine):
     m = memory(engine)
     assert engine.execute("memory.search", {"query": "SQLite"}, "a2")["results"] == []
@@ -73,6 +81,7 @@ def test_scope_and_scope_changes_are_authoritative(engine):
 
 
 def test_task_handoff_and_restart(engine, tmp_path):
+    enable_transcripts(engine)
     t = task(engine)
     bind(engine, "a1", t["id"])
     engine.execute(
@@ -688,13 +697,14 @@ def test_self_echo_suppression_even_when_user_memory_mode_all(engine):
         },
         channel="host",
     )
-    # Same-session prepare & search must never echo live conversation back to itself
+    # Automatic context avoids live echoes; explicit search remains available.
     prepared = engine.execute("context.prepare", {"query": "鲲鹏展翅"}, "a1", "host")
     assert prepared["recall_text"] == ""
-    assert engine.execute("memory.search", {"query": "鲲鹏展翅"}, "a1")["results"] == []
+    assert engine.execute("memory.search", {"query": "鲲鹏展翅"}, "a1")["results"]
 
 
 def test_handoff_tail_and_backward_transcript_tool(engine):
+    enable_transcripts(engine)
     t = task(engine)
     bind(engine, "a1", t["id"])
     # Create 10 messages in a1: early history, a revoked proposal, and a large tool output

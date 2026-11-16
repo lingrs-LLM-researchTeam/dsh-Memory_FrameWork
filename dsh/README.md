@@ -28,6 +28,8 @@ npx @deepseek-ai/dsh@0.2.2-rc.1 plugin --profile web add "file:./dsh-memory-fram
 - 来源撤销：派生记忆立即隔离，相关任务验收失效。已经接触该来源的会话在后续准入时被阻止；原生面板可建立干净接续会话。旧回复和已发送给模型的请求不能追溯删除。
 - 干净接续：新建空会话并绑定当前任务，不复制旧历史。尚未送达的真人输入保存在运行记录中，需核对后重新发送；附件不自动搬运。
 
+启动时若恢复日志最后一条记录因中断写入而缺少换行且不是完整 JSON，插件会先把该片段的原始字节保存到同目录下唯一的 `dsh-<instanceId>-pending.jsonl.corrupt-<id>` 文件，再恢复此前完整记录；日志会提示备份位置，不输出消息正文。片段无法自动补全，需要核对后手动恢复，请保护备份中的私人内容。中间记录损坏、已换行的损坏记录或记录字段不合法仍会阻止启动；备份或修复失败也不会静默跳过。此恢复针对进程中断，不保证硬件故障或断电后的完整性，仍应保留数据备份。
+
 任务迁移会解除旧会话绑定，清除旧工作环境下的验收证据，不自动移动历史记忆或扩大共享范围。请在目标工作区的会话中重新绑定任务。
 
 模型可调用 `memory_framework_search`、`memory_framework_read`、`memory_framework_remember`、`memory_framework_task_state`、`memory_framework_task_update`、`memory_framework_transcript`。模型不能管理共享授权、替换用户约束或自行完成用户验收。
@@ -118,4 +120,6 @@ DSH 全局工具名必须唯一。该项目的旧版插件可能会与 dsh-lingh
 
 ## 0.3.3 前缀缓存保护、尾部增量召回与跨会话交接
 
-SQLite schema 自动升级至 4（保留全部已有任务、记忆与来源）。静态上下文 `<memory-framework-context>` 锁定任务契约、固定记忆与上任会话尾部交接现场，移除 `[memory-receipt:N]`、`next_action` 等易变噪声并通过内容 SHA-256 指纹追踪跨会话污点传播；动态关联记忆改为按轮次在对话尾部追加 `<memory-framework-recall>` 并在会话内去重；新增 `memory_framework_transcript` 支持跨会话历史向后翻页与折叠工具输出展开；`user_memory_mode` 默认设为 `evidence_only` 并抑制本会话聊天回声。
+SQLite schema 自动升级至 4，保留已有任务、记忆、来源和 `next_action` 交接备注。静态上下文锁定任务契约、固定记忆与首次接续进度；可变召回在用户轮次尾部追加，每个模型步骤仍向核心核对准入。交付失败会撤销未提交收据，历史修订后可重建收据，上下文压缩后恢复动态召回。
+
+工作区 `task_transcript_enabled` 默认关闭，开启后 `memory_framework_transcript` 与尾部交接才读取同任务共享聊天；未共享来源与受污染会话不会作为交接现场。历史按剩余 UTF-8 字节预算折叠，任务契约与固定规则优先。显式搜索可读取本窗口保存的记忆。插件使用核心协议 2，检测到旧核心时会提示停止旧核心并重新启动。缓存收益以实际模型用量和耗时测量。

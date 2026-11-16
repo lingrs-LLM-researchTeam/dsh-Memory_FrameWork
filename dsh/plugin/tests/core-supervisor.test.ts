@@ -169,10 +169,136 @@ describe("source Python runtime upgrades", () => {
     );
     write(wheel);
     resolvePythonRuntime(f.data, f.source);
-    expect(installCalls()[0][1]).toEqual(["-m", "pip", "install", wheel]);
+    expect(installCalls()[0][1]).toEqual([
+      "-m",
+      "pip",
+      "install",
+      "--force-reinstall",
+      "--no-deps",
+      wheel,
+    ]);
     rmSync(wheel);
     resolvePythonRuntime(f.data, f.source);
-    expect(installCalls()[1][1]).toEqual(["-m", "pip", "install", f.source]);
+    expect(installCalls()[2][1]).toEqual(["-m", "pip", "install", f.source]);
     expect(readFileSync(f.stamp, "utf8")).toMatch(/^source-sha256:/);
+  });
+});
+
+describe("bundled Python wheel upgrades", () => {
+  function wheelFixture() {
+    const f = fixture();
+    const wheel = join(
+      f.source,
+      "python",
+      "memory_framework_dsh-0.3.2-py3-none-any.whl",
+    );
+    write(wheel, "wheel revision one");
+    return { ...f, wheel };
+  }
+
+  const forcedInstall = (wheel: string) => [
+    "-m",
+    "pip",
+    "install",
+    "--force-reinstall",
+    "--no-deps",
+    wheel,
+  ];
+
+  const wheelInstalls = () =>
+    installCalls().filter(([, args]) => args?.includes("--force-reinstall"));
+
+  it("migrates a filename-only stamp and reuses unchanged wheel bytes", () => {
+    const f = wheelFixture();
+    write(f.stamp, "memory_framework_dsh-0.3.2-py3-none-any.whl");
+    expect(resolvePythonRuntime(f.data, f.source)).toBe(f.python);
+    expect(wheelInstalls()).toHaveLength(1);
+    expect(wheelInstalls()[0][1]).toEqual(forcedInstall(f.wheel));
+    expect(installCalls()[1][1]).toEqual(["-m", "pip", "install", f.wheel]);
+    expect(readFileSync(f.stamp, "utf8")).toMatch(
+      /^wheel-sha256:[a-f0-9]{64}$/,
+    );
+    resolvePythonRuntime(f.data, f.source);
+    expect(wheelInstalls()).toHaveLength(1);
+  });
+
+  it("reinstalls replaced wheel bytes even when the filename and version stay the same", () => {
+    const f = wheelFixture();
+    resolvePythonRuntime(f.data, f.source);
+    const previousStamp = readFileSync(f.stamp, "utf8");
+    write(f.wheel, "wheel revision two");
+    resolvePythonRuntime(f.data, f.source);
+    expect(wheelInstalls()).toHaveLength(2);
+    expect(wheelInstalls()[1][1]).toEqual(forcedInstall(f.wheel));
+    expect(readFileSync(f.stamp, "utf8")).not.toBe(previousStamp);
+    resolvePythonRuntime(f.data, f.source);
+    expect(wheelInstalls()).toHaveLength(2);
+  });
+
+  it("does not advance the stamp after a failed replacement and retries", () => {
+    const f = wheelFixture();
+    resolvePythonRuntime(f.data, f.source);
+    const previousStamp = readFileSync(f.stamp, "utf8");
+    write(f.wheel, "wheel revision two");
+    exec.mockImplementationOnce(() => {
+      throw new Error("pip failed");
+    });
+    expect(() => resolvePythonRuntime(f.data, f.source)).toThrow("pip failed");
+    expect(readFileSync(f.stamp, "utf8")).toBe(previousStamp);
+    resolvePythonRuntime(f.data, f.source);
+    expect(wheelInstalls()).toHaveLength(3);
+    expect(readFileSync(f.stamp, "utf8")).not.toBe(previousStamp);
+  });
+
+  it("keeps the previous stamp when dependency installation fails and retries both steps", () => {
+    const f = wheelFixture();
+    resolvePythonRuntime(f.data, f.source);
+    const previousStamp = readFileSync(f.stamp, "utf8");
+    write(f.wheel, "wheel revision two");
+    exec.mockImplementationOnce(() => Buffer.alloc(0));
+    exec.mockImplementationOnce(() => {
+      throw new Error("dependency installation failed");
+    });
+    expect(() => resolvePythonRuntime(f.data, f.source)).toThrow(
+      "dependency installation failed",
+    );
+    expect(readFileSync(f.stamp, "utf8")).toBe(previousStamp);
+    resolvePythonRuntime(f.data, f.source);
+    expect(wheelInstalls()).toHaveLength(3);
+    expect(installCalls()).toHaveLength(6);
+    expect(readFileSync(f.stamp, "utf8")).not.toBe(previousStamp);
+  });
+
+  it("reinstalls a matching wheel when imports fail", () => {
+    const f = wheelFixture();
+    resolvePythonRuntime(f.data, f.source);
+    exec.mockImplementationOnce(() => {
+      throw new Error("missing module");
+    });
+    resolvePythonRuntime(f.data, f.source);
+    expect(wheelInstalls()).toHaveLength(2);
+    expect(wheelInstalls()[1][1]).toEqual(forcedInstall(f.wheel));
+  });
+
+  it("forces installation when switching from a same-version source runtime", () => {
+    const f = wheelFixture();
+    rmSync(f.wheel);
+    resolvePythonRuntime(f.data, f.source);
+    expect(readFileSync(f.stamp, "utf8")).toMatch(/^source-sha256:/);
+    write(f.wheel, "wheel revision one");
+    resolvePythonRuntime(f.data, f.source);
+    expect(wheelInstalls()[0][1]).toEqual(forcedInstall(f.wheel));
+    expect(installCalls()[2][1]).toEqual(["-m", "pip", "install", f.wheel]);
+    expect(readFileSync(f.stamp, "utf8")).toMatch(/^wheel-sha256:/);
+  });
+
+  it("forces installation without a stamp even if a same-version package may exist", () => {
+    const f = wheelFixture();
+    expect(existsSync(f.stamp)).toBe(false);
+    resolvePythonRuntime(f.data, f.source);
+    expect(wheelInstalls()).toHaveLength(1);
+    expect(wheelInstalls()[0][1]).toEqual(forcedInstall(f.wheel));
+    expect(installCalls()[1][1]).toEqual(["-m", "pip", "install", f.wheel]);
+    expect(readFileSync(f.stamp, "utf8")).toMatch(/^wheel-sha256:/);
   });
 });

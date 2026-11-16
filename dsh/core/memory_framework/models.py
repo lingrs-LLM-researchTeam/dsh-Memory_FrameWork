@@ -74,6 +74,7 @@ class TaskUpdate(Contract):
     acceptance: list[str] | None = Field(default=None, max_length=50)
     blockers: list[str] | None = Field(default=None, max_length=50)
     decisions: list[str] | None = Field(default=None, max_length=100)
+    next_action: str | None = Field(default=None, max_length=4000)
     status: (
         Literal[
             "planned",
@@ -149,6 +150,7 @@ class WorkspacePolicy(Contract):
     max_writes: int = Field(default=3, ge=0, le=20)
     source_chars: int = Field(default=2000, ge=100, le=12000)
     user_memory_mode: Literal["evidence_only", "all"] = "evidence_only"
+    task_transcript_enabled: bool = False
     tool_memory_mode: Literal["evidence_only", "allowlist", "all"] = "evidence_only"
     tool_allowlist: list[str] = Field(default_factory=list, max_length=100)
     tool_max_chars: int = Field(default=4000, ge=100, le=12000)

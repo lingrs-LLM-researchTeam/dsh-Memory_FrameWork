@@ -54,6 +54,11 @@ def bounded_result(result, allowance, chars, *, mutation=False):
                 if result["entries"]
                 else dropped["sequence"] + 1
             )
+        if not result["entries"] and result.get("has_more"):
+            return {
+                "status": "evidence_budget_exhausted",
+                "message": "本轮预算不足以读取一条记录；请在新一轮继续读取。",
+            }
     elif "source" in result:
         result = {**result, "source": dict(result["source"])}
         while wire_bytes(result) > allowance and len(result["source"]["content"]) > 50:

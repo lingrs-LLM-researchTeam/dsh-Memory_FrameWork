@@ -103,6 +103,26 @@ describe("visible dashboard polling", () => {
 });
 
 describe("core supervisor auto-start", () => {
+  it("reports an incompatible running core before attempting to start another", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mf-protocol-"));
+    const credentialsFile = join(dir, "credentials.json");
+    writeFileSync(credentialsFile, "{}");
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ status: "ok", version: "0.3.2" })),
+      );
+    try {
+      await expect(
+        ensureCoreDaemon({
+          coreUrl: "http://127.0.0.1:18765",
+          credentialsFile,
+        }),
+      ).rejects.toThrow("核心协议不兼容");
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
   it("reuses an already healthy loopback core and rejects non-loopback URLs", async () => {
     await expect(
       ensureCoreDaemon({
@@ -120,11 +140,11 @@ describe("core supervisor auto-start", () => {
         admin_token: "a".repeat(48),
       }),
     );
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
-      );
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ status: "ok", protocol_version: 2 }), {
+        status: 200,
+      }),
+    );
     try {
       const dispose = await ensureCoreDaemon({
         coreUrl: "http://127.0.0.1:18765",
@@ -143,7 +163,7 @@ describe("core supervisor auto-start", () => {
 });
 
 describe("turn-level preparation, static prefix lock, and tail recall", () => {
-  it("runs context.prepare once per user turn, skips tool-continuation steps, and hashes recall on replay", async () => {
+  it("prepares once per user turn, checks continuation admission, and hashes recall on replay", async () => {
     const dir = mkdtempSync(join(tmpdir(), "mf-rt-"));
     const credPath = join(dir, "credentials.json");
     writeFileSync(
@@ -157,7 +177,9 @@ describe("turn-level preparation, static prefix lock, and tail recall", () => {
     let contextProvider: any;
     const fakeCtx: any = {
       workspaceRegistry: {
-        list: () => [{ id: "w1", title: "W1", path: "/w1", sessionIds: ["s1"] }],
+        list: () => [
+          { id: "w1", title: "W1", path: "/w1", sessionIds: ["s1"] },
+        ],
       },
       sessions: { flush: async () => {} },
       sessionPersistence: {
@@ -260,7 +282,7 @@ describe("turn-level preparation, static prefix lock, and tail recall", () => {
     ).length;
     expect(callsAfterStep1).toBe(1);
 
-    // Turn 1 Step 2 (tool continuation: zero user messages): zero IPC calls & identical static prefix!
+    // Continuation checks authority without repeating retrieval or changing the prefix.
     const d2 = await preStepHandler(
       {
         agent,
@@ -278,6 +300,22 @@ describe("turn-level preparation, static prefix lock, and tail recall", () => {
     expect(contextProvider.text({ agent })).toContain("LOCKED_STATIC_CONTRACT");
 
     // Replay of tail recall message in forked session hashes content without [memory-receipt:N]
+    await runtime.ingest(
+      agent.session,
+      { seq: 3, type: "compaction/end", data: {} } as any,
+      signal,
+    );
+    expect(
+      callSpy.mock.calls.filter((c) => c[1].operation === "context.refresh"),
+    ).toHaveLength(1);
+    await runtime.ingest(
+      agent.session,
+      { seq: 4, type: "compaction/end", data: { error: "cancelled" } } as any,
+      signal,
+    );
+    expect(
+      callSpy.mock.calls.filter((c) => c[1].operation === "context.refresh"),
+    ).toHaveLength(1);
     await runtime.ingest(
       agent.session,
       {
@@ -316,13 +354,14 @@ describe("turn-level preparation, static prefix lock, and tail recall", () => {
         };
       if (req.operation === "context.check") {
         checkCount += 1;
-        return { safe: true, policy_revision: checkCount === 1 ? 1 : 2 };
+        return { safe: true, policy_revision: checkCount <= 2 ? 1 : 2 };
       }
       if (req.operation === "context.prepare")
         return {
           text: "<memory-framework-context>\nLOCKED_STATIC_CONTRACT\n</memory-framework-context>",
           recall_text:
             "<memory-framework-recall>\n[memory:10] Uncommitted recall\n</memory-framework-recall>",
+          prepared_receipt_ids: [91],
           policy_revision: 1,
           task: null,
           safe: true,
@@ -360,7 +399,7 @@ describe("turn-level preparation, static prefix lock, and tail recall", () => {
     expect(callSpy).toHaveBeenCalledWith("host", {
       operation: "context.discard",
       session_id: "local:s1",
-      payload: { content_hash: staleHash },
+      payload: { content_hash: staleHash, receipt_ids: [91] },
     });
   });
 });

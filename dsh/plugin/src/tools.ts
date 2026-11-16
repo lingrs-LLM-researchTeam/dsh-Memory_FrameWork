@@ -153,6 +153,11 @@ export function installTools(ctx: Context, runtime: MemoryRuntime) {
           items: { type: "string" },
           description: "Unresolved blockers",
         },
+        next_action: {
+          type: "string",
+          description:
+            "Optional milestone handoff note; update only when the next step changes meaningfully",
+        },
         evidence_ids: {
           type: "array",
           items: { type: "string" },

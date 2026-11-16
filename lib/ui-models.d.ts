@@ -46,6 +46,7 @@ export declare const TaskSchema: z.ZodObject<{
     status: z.ZodString;
     blockers: z.ZodArray<z.ZodString>;
     decisions: z.ZodArray<z.ZodString>;
+    next_action: z.ZodDefault<z.ZodString>;
     evidence_ids: z.ZodArray<z.ZodString>;
     verification: z.ZodRecord<z.ZodString, z.ZodObject<{
         source_id: z.ZodString;
@@ -69,6 +70,7 @@ export declare const PolicySchema: z.ZodObject<{
         evidence_only: "evidence_only";
         all: "all";
     }>>;
+    task_transcript_enabled: z.ZodDefault<z.ZodBoolean>;
     tool_memory_mode: z.ZodEnum<{
         evidence_only: "evidence_only";
         all: "all";
@@ -122,6 +124,7 @@ export declare const SnapshotSchema: z.ZodObject<{
                 evidence_only: "evidence_only";
                 all: "all";
             }>>;
+            task_transcript_enabled: z.ZodDefault<z.ZodBoolean>;
             tool_memory_mode: z.ZodEnum<{
                 evidence_only: "evidence_only";
                 all: "all";
@@ -203,6 +206,7 @@ export declare const SnapshotSchema: z.ZodObject<{
         status: z.ZodString;
         blockers: z.ZodArray<z.ZodString>;
         decisions: z.ZodArray<z.ZodString>;
+        next_action: z.ZodDefault<z.ZodString>;
         evidence_ids: z.ZodArray<z.ZodString>;
         verification: z.ZodRecord<z.ZodString, z.ZodObject<{
             source_id: z.ZodString;

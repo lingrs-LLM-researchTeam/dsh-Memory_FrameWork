@@ -12,7 +12,7 @@ Other plugins may expose `memory_read` or similar names for separate stores. Nev
 ## 1. Zero-Redundancy Context & Transcript Handoff Rule
 
 Before calling any `memory_framework_*` tool, inspect the locked `<memory-framework-context>` block and any tail `<memory-framework-recall>` blocks already present in the conversation:
-- **Static prefix**: `<memory-framework-context>` locks the task contract (`id`, `title`, `goal`, `constraints`, `acceptance`), pinned rules, and—when continuing a task in a fresh window—the prior session's tail dialogue.
+- **Static prefix**: `<memory-framework-context>` contains the task contract, pinned rules, and a one-time progress snapshot. Prior dialogue is included only when the owner enables task transcript sharing; unsafe predecessor sessions are excluded. Read `memory_framework_task_state` for current progress and verify relevant artifacts when resuming.
 - **Backward pagination (`memory_framework_transcript`)**: If the mounted handoff tail is not enough to reconstruct earlier context, call `memory_framework_transcript(before_sequence=..., limit=...)` to page backwards through the prior session's messages, or pass `source_id` to expand a folded tool result.
 - **Do not call `memory_framework_search`** for facts already present in `<memory-framework-context>` or `<memory-framework-recall>` unless you need additional `source_ids` or deeper context.
 - Every tool call—**including failed attempts**—consumes the per-turn quota (default: `12` tool calls, `3` writes, and the workspace's `evidence_bytes` budget).
@@ -51,7 +51,7 @@ Before calling any `memory_framework_*` tool, inspect the locked `<memory-framew
 Tasks persist across DSH windows and use optimistic concurrency control (`expected_revision`).
 
 ### Updating Milestones (`memory_framework_task_update`)
-- **Only update on milestone changes**: Do NOT call `memory_framework_task_update` for routine step-by-step progress. Only call it when `status` (`active`, `waiting`, `blocked`, `verifying`, `completed`), `blockers`, or milestone `evidence_ids` actually change. First read the current `revision` via `memory_framework_task_state` if you do not yet know it in this session.
+- **Only update on milestone changes**: Update `status`, `blockers`, `decisions`, supporting `evidence_ids`, or the optional `next_action` handoff note when meaningful progress changes. Keep the next action concrete without rewriting it on routine tool steps. First read the current `revision` via `memory_framework_task_state` if needed.
 - **Handling `revision_conflict`**: If another window updated the task concurrently, call `memory_framework_task_state` once to read the new `revision` and latest fields, merge your progress, and submit a single retry with the updated `expected_revision`.
 - **Handling `verification_required` (Completion Gate)**:
   - The model **cannot** set `status: "completed"` while any item in `acceptance` is unverified (`verification[criterion]` is empty).

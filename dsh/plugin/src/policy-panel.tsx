@@ -113,8 +113,8 @@ function Editor({
         <p className="mf-muted">
           当前轮已用 {usage?.used_bytes ?? 0} B · 工具调用{" "}
           {usage?.tool_calls ?? 0} 次 · 今日向量化 {embeddings?.calls ?? 0} 次（
-          {embeddings?.input_chars ?? 0} 字符） · 待索引 {snapshot.index_pending}{" "}
-          条
+          {embeddings?.input_chars ?? 0} 字符） · 待索引{" "}
+          {snapshot.index_pending} 条
         </p>
         {!snapshot.embedding_enabled && (
           <p className="mf-notice">尚未配置向量模型；当前使用全文检索。</p>
@@ -247,6 +247,12 @@ function Editor({
           </label>
           <fieldset className="mf-switch-group">
             <legend>工作区开关</legend>
+            <AnimatedSwitch
+              label="允许同任务窗口读取原始聊天与交接现场"
+              checked={draft.task_transcript_enabled}
+              disabled={busy}
+              onChange={(value) => change("task_transcript_enabled", value)}
+            />
             <AnimatedSwitch
               label="收录工具错误输出"
               checked={draft.tool_include_errors}

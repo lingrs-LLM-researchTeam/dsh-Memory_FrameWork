@@ -47,6 +47,7 @@ export const TaskSchema = z.object({
   status: z.string(),
   blockers: z.array(z.string()),
   decisions: z.array(z.string()),
+  next_action: z.string().default(""),
   evidence_ids: z.array(z.string()),
   verification: z.record(
     z.string(),
@@ -67,6 +68,7 @@ export const PolicySchema = z.object({
   max_writes: z.number(),
   source_chars: z.number(),
   user_memory_mode: z.enum(["evidence_only", "all"]).default("evidence_only"),
+  task_transcript_enabled: z.boolean().default(false),
   tool_memory_mode: z.enum(["evidence_only", "allowlist", "all"]),
   tool_allowlist: z.array(z.string()),
   tool_max_chars: z.number(),

@@ -3,6 +3,14 @@ import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { Session, SessionEvent, SessionId } from "@deepseek-ai/dsh-session";
 import type { GoalService } from "@deepseek-ai/dsh-goal";
 import { CoreClient } from "./transport.js";
+declare module "@deepseek-ai/dsh-llm" {
+    interface MessageSourceMap {
+        "memory-framework": {
+            readonly kind: "memory-framework";
+            readonly form: "recall";
+        };
+    }
+}
 export declare function plainText(content: readonly unknown[]): string;
 export declare class MemoryRuntime {
     readonly ctx: Context;
@@ -11,9 +19,11 @@ export declare class MemoryRuntime {
     readonly client: CoreClient;
     private readonly snapshots;
     private readonly fences;
+    private readonly dirtySessions;
+    private readonly syncedModels;
+    private readonly pendingExposures;
     private readonly queues;
     private readonly activeSessions;
-    private readonly admitting;
     private readonly eventCursors;
     private readonly updates;
     private readonly pending;

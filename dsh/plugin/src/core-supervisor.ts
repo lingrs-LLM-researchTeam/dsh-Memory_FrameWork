@@ -43,17 +43,24 @@ export async function isCoreHealthy(
   origin: string,
   timeoutMs = 1200,
 ): Promise<boolean> {
+  let data: { status?: string; version?: string; protocol_version?: number };
   try {
     const response = await fetch(origin + "/health", {
       method: "GET",
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) return false;
-    const data = (await response.json()) as { status?: string };
-    return data?.status === "ok";
+    data = (await response.json()) as typeof data;
   } catch {
     return false;
   }
+  if (data?.status !== "ok") return false;
+  if (data.protocol_version !== 2) {
+    throw new Error(
+      `Memory Framework 核心协议不兼容（${data.version ?? "未知版本"}）。请停止旧核心并使用当前插件重新启动。`,
+    );
+  }
+  return true;
 }
 
 function canImportMemoryFramework(
@@ -220,9 +227,7 @@ export function resolvePythonRuntime(
 ): string {
   const isWin = process.platform === "win32";
   const venvBin = (root: string) =>
-    isWin
-      ? join(root, "Scripts", "python.exe")
-      : join(root, "bin", "python");
+    isWin ? join(root, "Scripts", "python.exe") : join(root, "bin", "python");
 
   const repoRoot = resolveRepoRoot(pluginRoot);
   // Reuse editable checkout environments, not stale copies in site-packages.
@@ -378,9 +383,7 @@ export async function ensureCoreDaemon(
   const deadline = Date.now() + 15000;
   while (Date.now() < deadline) {
     if (await isCoreHealthy(origin, 1000)) {
-      options.logger?.info?.(
-        `Memory Framework core daemon ready at ${origin}`,
-      );
+      options.logger?.info?.(`Memory Framework core daemon ready at ${origin}`);
       return () => {
         if (child && !exited) {
           child.kill();
@@ -388,10 +391,7 @@ export async function ensureCoreDaemon(
         }
       };
     }
-    if (
-      exited &&
-      !stderrTail.includes("already has a running memory daemon")
-    ) {
+    if (exited && !stderrTail.includes("already has a running memory daemon")) {
       break;
     }
     await new Promise((resolveTimer) => setTimeout(resolveTimer, 150));

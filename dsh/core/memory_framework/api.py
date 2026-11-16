@@ -91,7 +91,7 @@ def create_app(
 
     @app.get("/health")
     def health():
-        return {"status": "ok", "version": __version__}
+        return {"status": "ok", "version": __version__, "protocol_version": 2}
 
     @app.post("/dashboard/login")
     async def login(request: Request):

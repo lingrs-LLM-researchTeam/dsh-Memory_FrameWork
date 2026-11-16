@@ -113,8 +113,8 @@ function Editor({
         <p className="mf-muted">
           当前轮已用 {usage?.used_bytes ?? 0} B · 工具调用{" "}
           {usage?.tool_calls ?? 0} 次 · 今日向量化 {embeddings?.calls ?? 0} 次（
-          {embeddings?.input_chars ?? 0} 字符） · 待索引 {snapshot.index_pending}{" "}
-          条
+          {embeddings?.input_chars ?? 0} 字符） · 待索引{" "}
+          {snapshot.index_pending} 条
         </p>
         {!snapshot.embedding_enabled && (
           <p className="mf-notice">尚未配置向量模型；当前使用全文检索。</p>
@@ -191,23 +191,43 @@ function Editor({
               </label>
             ))}
           </div>
-          <label className="mf-label">
-            工具输出自动收录
-            <select
-              aria-label="工具输出自动收录"
-              value={draft.tool_memory_mode}
-              onChange={(e) =>
-                change(
-                  "tool_memory_mode",
-                  e.target.value as Policy["tool_memory_mode"],
-                )
-              }
-            >
-              <option value="evidence_only">仅保留原始证据，手动收录</option>
-              <option value="allowlist">只自动收录指定工具</option>
-              <option value="all">自动收录符合长度限制的工具</option>
-            </select>
-          </label>
+          <div className="mf-form-grid">
+            <label className="mf-label">
+              用户发言自动收录
+              <select
+                aria-label="用户发言自动收录"
+                value={draft.user_memory_mode}
+                onChange={(e) =>
+                  change(
+                    "user_memory_mode",
+                    e.target.value as Policy["user_memory_mode"],
+                  )
+                }
+              >
+                <option value="evidence_only">
+                  仅保留聊天记录与来源证据，按需收录（推荐，保护缓存）
+                </option>
+                <option value="all">每句发言自动生成记忆</option>
+              </select>
+            </label>
+            <label className="mf-label">
+              工具输出自动收录
+              <select
+                aria-label="工具输出自动收录"
+                value={draft.tool_memory_mode}
+                onChange={(e) =>
+                  change(
+                    "tool_memory_mode",
+                    e.target.value as Policy["tool_memory_mode"],
+                  )
+                }
+              >
+                <option value="evidence_only">仅保留原始证据，手动收录</option>
+                <option value="allowlist">只自动收录指定工具</option>
+                <option value="all">自动收录符合长度限制的工具</option>
+              </select>
+            </label>
+          </div>
           <label className="mf-label">
             允许自动收录的工具名称（每行一个）
             <textarea
@@ -227,6 +247,12 @@ function Editor({
           </label>
           <fieldset className="mf-switch-group">
             <legend>工作区开关</legend>
+            <AnimatedSwitch
+              label="允许同任务窗口读取原始聊天与交接现场"
+              checked={draft.task_transcript_enabled}
+              disabled={busy}
+              onChange={(value) => change("task_transcript_enabled", value)}
+            />
             <AnimatedSwitch
               label="收录工具错误输出"
               checked={draft.tool_include_errors}
@@ -271,7 +297,7 @@ function Editor({
         </form>
       </section>
       <section className="mf-panel">
-        <h2>待收录工具证据</h2>
+        <h2>待收录对话与工具证据</h2>
         {snapshot.source_candidates
           .filter((s) => s.workspace_id === current.workspace_id)
           .slice(0, candidateLimit)

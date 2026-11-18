@@ -30,6 +30,7 @@ import type { GoalService } from "@deepseek-ai/dsh-goal";
 import { CoreClient, CoreError, expandPath } from "./transport.js";
 import { readHostContext } from "./host-context.js";
 import { MEMORY_TOOLS } from "./tool-names.js";
+import { JournalRow, compactConfirmedJournal } from "./journal-compaction.js";
 
 declare module "@deepseek-ai/dsh-llm" {
   interface MessageSourceMap {
@@ -65,14 +66,6 @@ const MIRRORED_EVENTS = new Set<string>([
   "compaction/end",
 ]);
 type Prepared = z.infer<typeof Prepared>;
-const JournalRow = z
-  .object({
-    sessionId: z.string(),
-    messageId: z.string(),
-    message: z.json().optional(),
-    admitted: z.boolean(),
-  })
-  .strict();
 
 export function plainText(content: readonly unknown[]): string {
   return content
@@ -495,6 +488,12 @@ export class MemoryRuntime {
       while (this.alive) {
         const batch = await handle.read(offset, 100, { signal });
         if (!batch.events.length) break;
+        // Reads can observe events appended after the initial flush. Establish
+        // a fresh barrier for this exact batch before permitting cleanup.
+        if ((await this.ctx.sessions.flush(session)) !== true)
+          throw new Error(
+            "Memory replay requires a successful persistence flush",
+          );
         for (const event of batch.events)
           await this.ingest(session, event, signal);
         offset += batch.events.length;
@@ -506,6 +505,14 @@ export class MemoryRuntime {
             payload: { cursor: offset - 1 },
           },
           signal,
+        );
+        compactConfirmedJournal(
+          this.journal,
+          batch.events.flatMap((event) =>
+            event.type === "user/message" && event.data.source.kind === "user"
+              ? [{ sessionId: session.id, messageId: event.data.id }]
+              : [],
+          ),
         );
         if (batch.events.length < 100) break;
       }
